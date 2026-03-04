@@ -3,301 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Barevné Gyro Kuličky</title>
+    <title>Gyro Kuličky - Kolize</title>
     <style>
-        :root {
-            --bg-color: #0f172a;
-            --accent-color: #38bdf8;
-        }
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: var(--bg-color);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            touch-action: none;
-            user-select: none;
-        }
-        canvas {
-            display: block;
-        }
+        body { margin: 0; overflow: hidden; background: #0f172a; font-family: sans-serif; touch-action: none; }
+        canvas { display: block; }
         #overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            background: rgba(15, 23, 42, 0.9);
-            color: white;
-            z-index: 100;
-            transition: opacity 0.5s ease;
-        }
-        h1 {
-            margin-bottom: 0.5rem;
-            color: var(--accent-color);
-            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
-        }
-        p {
-            margin-bottom: 2rem;
-            text-align: center;
-            max-width: 80%;
-            line-height: 1.5;
-            color: #94a3b8;
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.95);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: white; z-index: 100; text-align: center; padding: 20px;
         }
         button {
-            padding: 1rem 2.5rem;
-            font-size: 1.2rem;
-            font-weight: bold;
-            text-transform: uppercase;
-            background: var(--accent-color);
-            color: #0f172a;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            box-shadow: 0 4px 20px rgba(56, 189, 248, 0.4);
-            transition: transform 0.2s, background 0.2s;
-        }
-        button:active {
-            transform: scale(0.95);
-        }
-        #info {
-            position: fixed;
-            bottom: 10px;
-            left: 10px;
-            color: rgba(255, 255, 255, 0.3);
-            font-size: 0.8rem;
-            pointer-events: none;
+            padding: 15px 40px; font-size: 1.2rem; background: #38bdf8;
+            color: #0f172a; border: none; border-radius: 50px; cursor: pointer;
+            font-weight: bold; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4);
         }
     </style>
 </head>
 <body>
-
     <div id="overlay">
-        <h1>Barevné Kuličky</h1>
-        <p>Ťukni pro přidání kuličky.<br>Nakloň mobil pro pohyb.<br>(Na PC simuluj náklon pohybem myši)</p>
-        <button id="start-btn">Spustit hru</button>
+        <h1>Fyzikální Kuličky 🔵</h1>
+        <p>Nakloň mobil pro pohyb.<br>Ťukni pro novou kuličku.<br>Kuličky se nyní odrážejí od sebe!</p>
+        <button id="start">SPUSTIT</button>
     </div>
-
-    <div id="info">Počet kuliček: <span id="count">0</span></div>
     <canvas id="canvas"></canvas>
 
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const startBtn = document.getElementById('start-btn');
-        const overlay = document.getElementById('overlay');
-        const countDisplay = document.getElementById('count');
-
+        const startBtn = document.getElementById('start');
+        
         let balls = [];
         let gravity = { x: 0, y: 0 };
-        let isStarted = false;
         let draggedBall = null;
-
-        // Třída pro kuličku
-        class Ball {
-            constructor(x, y) {
-                this.x = x;
-                this.y = y;
-                this.radius = Math.random() * 15 + 15; // Velikost 15-30px
-                this.color = `hsl(${Math.random() * 360}, 80%, 60%)`;
-                this.vx = (Math.random() - 0.5) * 10;
-                this.vy = (Math.random() - 0.5) * 10;
-                this.friction = 0.98; // Zpomalování
-                this.bounce = 0.8;   // Odrazivost
-                this.isDragging = false;
-            }
-
-            draw() {
-                // Hlavní tělo
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                
-                // Gradient pro 3D vzhled
-                const gradient = ctx.createRadialGradient(
-                    this.x - this.radius * 0.3, 
-                    this.y - this.radius * 0.3, 
-                    this.radius * 0.1,
-                    this.x, 
-                    this.y, 
-                    this.radius
-                );
-                gradient.addColorStop(0, '#ffffff');
-                gradient.addColorStop(0.2, this.color);
-                gradient.addColorStop(1, '#000000');
-
-                ctx.fillStyle = gradient;
-                ctx.fill();
-                ctx.closePath();
-
-                // Odlesk navrchu
-                ctx.beginPath();
-                ctx.ellipse(
-                    this.x - this.radius * 0.3, 
-                    this.y - this.radius * 0.3, 
-                    this.radius * 0.4, 
-                    this.radius * 0.2, 
-                    Math.PI / 4, 0, Math.PI * 2
-                );
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-                ctx.fill();
-                ctx.closePath();
-            }
-
-            update() {
-                if (this.isDragging) return;
-
-                // Gravitace z gyroskopu
-                this.vx += gravity.x;
-                this.vy += gravity.y;
-
-                // Aplikace tření
-                this.vx *= this.friction;
-                this.vy *= this.friction;
-
-                this.x += this.vx;
-                this.y += this.vy;
-
-                // Kolize se stěnami
-                if (this.x + this.radius > canvas.width) {
-                    this.x = canvas.width - this.radius;
-                    this.vx *= -this.bounce;
-                } else if (this.x - this.radius < 0) {
-                    this.x = this.radius;
-                    this.vx *= -this.bounce;
-                }
-
-                if (this.y + this.radius > canvas.height) {
-                    this.y = canvas.height - this.radius;
-                    this.vy *= -this.bounce;
-                } else if (this.y - this.radius < 0) {
-                    this.y = this.radius;
-                    this.vy *= -this.bounce;
-                }
-            }
-        }
+        let lastPos = { x: 0, y: 0 };
 
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
         }
-
         window.addEventListener('resize', resize);
         resize();
 
-        // Ovládání kuliček
-        canvas.addEventListener('pointerdown', (e) => {
-            if (!isStarted) return;
-            
-            const mouseX = e.clientX;
-            const mouseY = e.clientY;
-
-            // Kontrola, zda jsme klikli na existující kuličku
-            let hitIndex = -1;
-            for (let i = balls.length - 1; i >= 0; i--) {
-                const dist = Math.hypot(balls[i].x - mouseX, balls[i].y - mouseY);
-                if (dist < balls[i].radius) {
-                    hitIndex = i;
-                    break;
-                }
+        class Ball {
+            constructor(x, y) {
+                this.x = x; 
+                this.y = y;
+                this.radius = 15 + Math.random() * 15;
+                this.color = `hsl(${Math.random() * 360}, 80%, 60%)`;
+                this.vx = 0; 
+                this.vy = 0;
+                this.mass = this.radius; // Hmotnost závisí na velikosti
+                this.isDragging = false;
             }
 
-            if (hitIndex !== -1) {
-                draggedBall = balls[hitIndex];
-                draggedBall.isDragging = true;
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                let grad = ctx.createRadialGradient(this.x - this.radius * 0.3, this.y - this.radius * 0.3, 2, this.x, this.y, this.radius);
+                grad.addColorStop(0, '#fff'); 
+                grad.addColorStop(0.3, this.color); 
+                grad.addColorStop(1, '#000');
+                ctx.fillStyle = grad; 
+                ctx.fill();
+            }
+
+            update() {
+                if (this.isDragging) return;
+                
+                // Přidání gravitace
+                this.vx += gravity.x; 
+                this.vy += gravity.y;
+                
+                // Tření (vzduch/povrch)
+                this.vx *= 0.98; 
+                this.vy *= 0.98;
+                
+                this.x += this.vx; 
+                this.y += this.vy;
+
+                // Odrazy od stěn
+                if (this.x + this.radius > canvas.width) { 
+                    this.x = canvas.width - this.radius; 
+                    this.vx *= -0.6; 
+                } else if (this.x - this.radius < 0) { 
+                    this.x = this.radius; 
+                    this.vx *= -0.6; 
+                }
+                
+                if (this.y + this.radius > canvas.height) { 
+                    this.y = canvas.height - this.radius; 
+                    this.vy *= -0.6; 
+                } else if (this.y - this.radius < 0) { 
+                    this.y = this.radius; 
+                    this.vy *= -0.6; 
+                }
+            }
+        }
+
+        // Funkce pro řešení kolizí mezi dvěma kuličkami
+        function resolveCollision(b1, b2) {
+            const dx = b2.x - b1.x;
+            const dy = b2.y - b1.y;
+            const distance = Math.hypot(dx, dy);
+            const minDistance = b1.radius + b2.radius;
+
+            if (distance < minDistance) {
+                // 1. Vyřešení překryvu (odtlačení kuliček od sebe)
+                const overlap = minDistance - distance;
+                const nx = dx / distance; // Normálový vektor x
+                const ny = dy / distance; // Normálový vektor y
+                
+                const moveX = nx * overlap / 2;
+                const moveY = ny * overlap / 2;
+
+                if (!b1.isDragging) { b1.x -= moveX; b1.y -= moveY; }
+                if (!b2.isDragging) { b2.x += moveX; b2.y += moveY; }
+
+                // 2. Výpočet odrazu (zachování hybnosti)
+                // Relativní rychlost
+                const rvx = b2.vx - b1.vx;
+                const rvy = b2.vy - b1.vy;
+                
+                // Rychlost ve směru normály
+                const velAlongNormal = rvx * nx + rvy * ny;
+
+                // Pokud se kuličky už pohybují od sebe, nic nedělej
+                if (velAlongNormal > 0) return;
+
+                // Koeficient pružnosti (0.1 až 1)
+                const restitution = 0.5;
+
+                // Výpočet impulsu
+                let j = -(1 + restitution) * velAlongNormal;
+                j /= (1 / b1.mass + 1 / b2.mass);
+
+                // Aplikace impulsu
+                const impulseX = j * nx;
+                const impulseY = j * ny;
+
+                if (!b1.isDragging) {
+                    b1.vx -= impulseX / b1.mass;
+                    b1.vy -= impulseY / b1.mass;
+                }
+                if (!b2.isDragging) {
+                    b2.vx += impulseX / b2.mass;
+                    b2.vy += impulseY / b2.mass;
+                }
+            }
+        }
+
+        canvas.addEventListener('pointerdown', e => {
+            let hit = balls.find(b => Math.hypot(b.x - e.clientX, b.y - e.clientY) < b.radius);
+            if (hit) {
+                draggedBall = hit; hit.isDragging = true;
+                lastPos = { x: e.clientX, y: e.clientY };
             } else {
-                // Přidání nové kuličky
-                balls.push(new Ball(mouseX, mouseY));
-                countDisplay.textContent = balls.length;
+                balls.push(new Ball(e.clientX, e.clientY));
             }
         });
 
-        window.addEventListener('pointermove', (e) => {
+        window.addEventListener('pointermove', e => {
             if (draggedBall) {
-                // Výpočet rychlosti při "hození"
-                draggedBall.vx = (e.clientX - draggedBall.x) * 0.5;
-                draggedBall.vy = (e.clientY - draggedBall.y) * 0.5;
+                draggedBall.vx = (e.clientX - lastPos.x);
+                draggedBall.vy = (e.clientY - lastPos.y);
                 draggedBall.x = e.clientX;
                 draggedBall.y = e.clientY;
-            } else if (!isStarted) {
-                // Simulace gravitace myší na PC (pokud hra ještě neběží naplno nebo jsme na desktopu)
-                const centerX = window.innerWidth / 2;
-                const centerY = window.innerHeight / 2;
-                gravity.x = (e.clientX - centerX) / centerX * 0.5;
-                gravity.y = (e.clientY - centerY) / centerY * 0.5;
+                lastPos = { x: e.clientX, y: e.clientY };
             }
         });
 
         window.addEventListener('pointerup', () => {
-            if (draggedBall) {
-                draggedBall.isDragging = false;
-                draggedBall = null;
-            }
+            if (draggedBall) { draggedBall.isDragging = false; draggedBall = null; }
         });
 
-        // Gyroskop - Device Orientation API
-        function handleOrientation(event) {
-            if (!isStarted) return;
-            
-            // gamma je náklon doleva/doprava (-90 až 90)
-            // beta je náklon dopředu/dozadu (-180 až 180)
-            const x = event.gamma; 
-            const y = event.beta;
-
-            // Normalizace sil
-            gravity.x = x * 0.04;
-            gravity.y = y * 0.04;
-        }
-
-        // Herní smyčka
-        function animate() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Pozadí s lehkým gradientem
-            const bgGrad = ctx.createRadialGradient(
-                canvas.width/2, canvas.height/2, 10,
-                canvas.width/2, canvas.height/2, canvas.width
-            );
-            bgGrad.addColorStop(0, '#1e293b');
-            bgGrad.addColorStop(1, '#0f172a');
-            ctx.fillStyle = bgGrad;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            balls.forEach(ball => {
-                ball.update();
-                ball.draw();
-            });
-
-            requestAnimationFrame(animate);
-        }
-
-        // Spuštění
-        startBtn.addEventListener('click', () => {
-            isStarted = true;
-            overlay.style.opacity = '0';
-            setTimeout(() => {
-                overlay.style.display = 'none';
-            }, 500);
-
-            // Žádost o přístup k senzorům (pro iOS)
+        startBtn.onclick = () => {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(response => {
-                        if (response === 'granted') {
-                            window.addEventListener('deviceorientation', handleOrientation);
-                        }
-                    })
-                    .catch(console.error);
+                DeviceOrientationEvent.requestPermission().then(p => {
+                    if (p === 'granted') window.addEventListener('deviceorientation', e => {
+                        // Citlivost gyroskopu
+                        gravity.x = e.gamma * 0.08; 
+                        gravity.y = e.beta * 0.08;
+                    });
+                });
             } else {
-                // Ostatní zařízení (Android/Desktop)
-                window.addEventListener('deviceorientation', handleOrientation);
+                window.addEventListener('deviceorientation', e => {
+                    gravity.x = e.gamma * 0.08; 
+                    gravity.y = e.beta * 0.08;
+                });
             }
+            document.getElementById('overlay').remove();
+            
+            (function loop() {
+                ctx.fillStyle = '#0f172a'; 
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            animate();
-        });
+                // Kontrola kolizí mezi všemi kuličkami
+                for (let i = 0; i < balls.length; i++) {
+                    for (let j = i + 1; j < balls.length; j++) {
+                        resolveCollision(balls[i], balls[j]);
+                    }
+                }
+
+                balls.forEach(b => { 
+                    b.update(); 
+                    b.draw(); 
+                });
+                requestAnimationFrame(loop);
+            })();
+        };
     </script>
 </body>
 </html>
