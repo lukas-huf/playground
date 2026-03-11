@@ -1,569 +1,534 @@
-import React, { useState, useEffect, useRef } from 'react';
-
-// Herní level - Dubový háj
-const LEVEL = {
-  platforms: [
-    { id: 1, x: 0, y: 300, w: 2000, h: 100, type: 'grass' }, // Země
-    { id: 2, x: 300, y: 220, w: 120, h: 20, type: 'dirt' },  // První plošinka
-    { id: 3, x: 500, y: 140, w: 120, h: 20, type: 'dirt' },  // Druhá plošinka
-    { id: 4, x: 750, y: 200, w: 150, h: 20, type: 'dirt' },
-    { id: 5, x: 1000, y: 120, w: 100, h: 20, type: 'dirt' },
-    { id: 6, x: 1250, y: 220, w: 150, h: 20, type: 'dirt' },
-    { id: 7, x: 1550, y: 260, w: 200, h: 40, type: 'grass' }, // Plošina před dveřmi
-  ],
-  emeralds: [
-    { id: 1, x: 350, y: 180, collected: false },
-    { id: 2, x: 550, y: 100, collected: false },
-    { id: 3, x: 800, y: 160, collected: false },
-    { id: 4, x: 1030, y: 80, collected: false },
-    { id: 5, x: 1300, y: 180, collected: false },
-  ],
-  door: { x: 1650, y: 160, w: 60, h: 100 } // Dveře na konci levelu
-};
-
-const App = () => {
-  // Stav aplikace - co má hráč právě vybráno
-  const [gameState, setGameState] = useState('wardrobe'); // Může být: 'wardrobe', 'playing', 'won'
-  const [character, setCharacter] = useState('steve');
-  const [hat, setHat] = useState('none');
-  const [shirt, setShirt] = useState('none');
-  const [shoes, setShoes] = useState('none');
-  const [activeTab, setActiveTab] = useState('postava'); // 'postava', 'hlava', 'telo', 'nohy'
-
-  // Databáze oblečení a postaviček
-  const characters = [
-    { id: 'steve', name: 'Steve', bgColor: 'bg-blue-100' },
-    { id: 'alex', name: 'Alex', bgColor: 'bg-green-100' },
-    { id: 'koala', name: 'Koala', bgColor: 'bg-gray-100' }
-  ];
-
-  const wardrobe = {
-    hats: [
-      { id: 'none', name: 'Bez klobouku', color: 'transparent', icon: '👤' },
-      { id: 'diamond_helmet', name: 'Diamantová helma', color: '#82d8d8', icon: '💎' },
-      { id: 'leather_cap', name: 'Kožená čapka', color: '#8a5c32', icon: '🤠' },
-      { id: 'flower_crown', name: 'Květinová koruna', color: '#ff99cc', icon: '🌸' }
-    ],
-    shirts: [
-      { id: 'none', name: 'Základní oblečení', color: 'transparent', icon: '👕' },
-      { id: 'iron_armor', name: 'Železné brnění', color: '#e2e2e2', icon: '🛡️' },
-      { id: 'gold_armor', name: 'Zlaté brnění', color: '#fcee4e', icon: '✨' },
-      { id: 'red_shirt', name: 'Červené tričko', color: '#ff3333', icon: '🔴' }
-    ],
-    shoes: [
-      { id: 'none', name: 'Základní boty', color: 'transparent', icon: '👣' },
-      { id: 'diamond_boots', name: 'Diamantové boty', color: '#82d8d8', icon: '💎' },
-      { id: 'leather_boots', name: 'Kožené boty', color: '#8a5c32', icon: '🥾' },
-      { id: 'sneakers', name: 'Růžové tenisky', color: '#ff66b2', icon: '👟' }
-    ]
-  };
-
-  // --- HERNÍ LOGIKA (FÁZE 2) ---
-  const [emeraldsCount, setEmeraldsCount] = useState(0);
-  const playerRef = useRef({ x: 50, y: 200, vx: 0, vy: 0, w: 40, h: 60, isGrounded: false });
-  const keysRef = useRef({ left: false, right: false, up: false });
-  const emeraldsRef = useRef([]);
-  const scoreRef = useRef(0);
-  const requestRef = useRef();
-  const worldRef = useRef(null);
-  const playerDOMRef = useRef(null);
-
-  // Herní smyčka spuštěná 60x za sekundu (Fyzika jako v Mariovi)
-  const gameLoop = () => {
-    if (gameState !== 'playing') return;
-
-    const p = playerRef.current;
-    const jumpForce = -12; // Síla skoku
-    const gravity = 0.6;   // Přitažlivost
-    const friction = 0.8;  // Zpomalování
-
-    // Fyzika a pohyb
-    if (keysRef.current.left) p.vx -= 1.5;
-    if (keysRef.current.right) p.vx += 1.5;
-    p.vx *= friction;
-    p.vy += gravity;
-
-    // Omezení maximální rychlosti pádu
-    if (p.vy > 12) p.vy = 12;
-
-    // X Kolize (Narážení do zdí)
-    p.x += p.vx;
-    if (p.x < 0) { p.x = 0; p.vx = 0; } // Nepustí hráče ven z mapy doleva
-    if (p.x > 1960) { p.x = 1960; p.vx = 0; } // Nepustí ven doprava
-
-    for (let box of LEVEL.platforms) {
-      if (p.x < box.x + box.w && p.x + p.w > box.x && p.y < box.y + box.h && p.y + p.h > box.y) {
-        if (p.vx > 0) p.x = box.x - p.w;
-        else if (p.vx < 0) p.x = box.x + box.w;
-        p.vx = 0;
-      }
-    }
-
-    // Y Kolize (Stání na zemi a narážení hlavou)
-    p.y += p.vy;
-    p.isGrounded = false;
-    for (let box of LEVEL.platforms) {
-      if (p.x < box.x + box.w && p.x + p.w > box.x && p.y < box.y + box.h && p.y + p.h > box.y) {
-        if (p.vy > 0) { // Dopad na zem
-          p.y = box.y - p.h;
-          p.isGrounded = true;
-        } else if (p.vy < 0) { // Náraz hlavou zespodu
-          p.y = box.y + box.h;
-        }
-        p.vy = 0;
-      }
-    }
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Můj Dobrodružný Svět</title>
     
-    // Pád do prázdna (vrátí panáčka na začátek)
-    if (p.y > 500) {
-       p.x = 50; p.y = 200; p.vx = 0; p.vy = 0;
-    }
-
-    // Skok
-    if (keysRef.current.up && p.isGrounded) {
-      p.vy = jumpForce;
-      p.isGrounded = false;
-    }
-
-    // Kontrola sbírání emeraldů
-    let emChanged = false;
-    for (let em of emeraldsRef.current) {
-      if (!em.collected && p.x < em.x + 30 && p.x + p.w > em.x && p.y < em.y + 30 && p.y + p.h > em.y) {
-        em.collected = true;
-        emChanged = true;
-        // Schováme ho rovnou z obrazovky pro okamžitý efekt
-        const emNode = document.getElementById(`emerald-${em.id}`);
-        if (emNode) emNode.style.opacity = '0'; 
-      }
-    }
+    <!-- Tailwind CSS pro stylování -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    // Aktualizace skóre v horní liště
-    if (emChanged) {
-      const count = emeraldsRef.current.filter(e => e.collected).length;
-      scoreRef.current = count;
-      setEmeraldsCount(count); 
-    }
-
-    // Kontrola dveří do dalšího kola
-    if (scoreRef.current >= 5) {
-      const d = LEVEL.door;
-      // Zjistíme jestli hráč stojí ve dveřích
-      if (p.x < d.x + d.w && p.x + p.w > d.x && p.y < d.y + d.h && p.y + p.h > d.y) {
-        setGameState('won'); // Změní obrazovku na "Vítězství"
-        return; 
-      }
-    }
-
-    // Plynulé překreslení postavičky a kamery (bez zasekávání re-renderu Reactu)
-    if (playerDOMRef.current) {
-      playerDOMRef.current.style.transform = `translate(${p.x}px, ${p.y}px)`;
-    }
-    if (worldRef.current) {
-      // Posun kamery tak, aby postavička nezmizela ze záběru (tzv. Camera Follow)
-      const cameraX = Math.max(0, Math.min(p.x - window.innerWidth / 3, 2000 - window.innerWidth));
-      worldRef.current.style.transform = `translateX(${-cameraX}px)`;
-    }
-
-    requestRef.current = requestAnimationFrame(gameLoop);
-  };
-
-  useEffect(() => {
-    if (gameState === 'playing') {
-      requestRef.current = requestAnimationFrame(gameLoop);
-    }
-    return () => cancelAnimationFrame(requestRef.current);
-  }, [gameState]);
-
-
-  // Vykreslení postavičky (jednoduchá bloková grafika pro prototyp)
-  const renderCharacter = () => {
-    // Základní barvy postaviček
-    const skins = {
-      steve: { skin: '#d2b48c', shirtDefault: '#00aaaa', pantsDefault: '#4a4a9c' },
-      alex:  { skin: '#f3c5a3', shirtDefault: '#6a9c4a', pantsDefault: '#784a21' },
-      koala: { skin: '#a0a0a0', shirtDefault: '#b0b0b0', pantsDefault: '#909090' }
-    };
-
-    const currentSkin = skins[character];
+    <!-- React a ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     
-    // Zjištění vybraných barev oblečení
-    const currentHatColor = wardrobe.hats.find(h => h.id === hat)?.color;
-    const currentShirtColor = wardrobe.shirts.find(s => s.id === shirt)?.color;
-    const currentShoesColor = wardrobe.shoes.find(s => s.id === shoes)?.color;
+    <!-- Babel pro překlad React kódu (JSX) v prohlížeči -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    // Aplikace oblečení nebo základní barvy
-    const displayShirt = currentShirtColor === 'transparent' ? currentSkin.shirtDefault : currentShirtColor;
-    const displayShoes = currentShoesColor === 'transparent' ? currentSkin.pantsDefault : currentShoesColor;
+    <style>
+        /* Zabráníme posouvání stránky při hraní na mobilu */
+        body { overscroll-behavior: none; overflow: hidden; }
+        #root { height: 100vh; width: 100vw; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-    return (
-      <div className="relative flex flex-col items-center justify-center w-64 h-[350px] mx-auto transition-all duration-300">
-        
-        {/* HLAVA (Hranatá 80x80) */}
-        <div className="relative z-20 w-[80px] h-[80px] shadow-sm" style={{ backgroundColor: currentSkin.skin }}>
-          {/* Klobouk/Helma */}
-          {hat !== 'none' && (
-            <div 
-              className="absolute -top-2 -left-1 -right-1 h-[40px] z-30 transition-colors duration-300 shadow-sm"
-              style={{ backgroundColor: currentHatColor, borderBottom: '4px solid rgba(0,0,0,0.2)' }}
-            />
-          )}
-          
-          {/* Tvar hlavy podle postavy (vše přísně hranaté) */}
-          {character === 'koala' ? (
-             <>
-               {/* Hranaté uši koaly */}
-               <div className="absolute -left-6 -top-2 w-[30px] h-[30px] bg-gray-400 z-10 shadow-sm" />
-               <div className="absolute -right-6 -top-2 w-[30px] h-[30px] bg-gray-400 z-10 shadow-sm" />
-               {/* Oči a nos */}
-               <div className="absolute top-[30px] w-full flex justify-center space-x-6 z-20">
-                 <div className="w-[10px] h-[10px] bg-black" />
-                 <div className="w-[10px] h-[10px] bg-black" />
-               </div>
-               <div className="w-[20px] h-[30px] bg-gray-800 absolute top-[40px] left-[30px] z-20" />
-             </>
-          ) : (
-             <>
-               {/* Vlasy Alex */}
-               {character === 'alex' && <div className="absolute top-0 left-0 w-full h-[20px] bg-orange-500 z-20 shadow-sm" />}
-               {/* Vlasy Steve */}
-               {character === 'steve' && <div className="absolute top-0 left-0 w-full h-[20px] bg-gray-800 z-20 shadow-sm" />}
-               
-               {/* Oči */}
-               <div className="absolute top-[40px] w-full flex justify-center space-x-4 z-20">
-                 <div className="w-[15px] h-[10px] bg-white flex items-center justify-start"><div className="w-[8px] h-[10px] bg-blue-600" /></div>
-                 <div className="w-[15px] h-[10px] bg-white flex items-center justify-start"><div className="w-[8px] h-[10px] bg-blue-600" /></div>
-               </div>
-             </>
-          )}
-        </div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-        {/* TĚLO A RUCE */}
-        <div className="flex z-10 relative mt-[2px]">
-          {/* Levá ruka (40x120) */}
-          <div className="w-[40px] h-[120px] shadow-sm transition-colors duration-300 mr-[2px]" style={{ backgroundColor: currentSkin.skin }}>
-             {/* Rukáv, pokud má tričko/brnění */}
-             {shirt !== 'none' && <div className="w-full h-[50px] shadow-sm border-b-4 border-black/10" style={{ backgroundColor: displayShirt }} />}
-          </div>
-          
-          {/* Hrudník (80x120) */}
-          <div 
-            className="w-[80px] h-[120px] shadow-md transition-colors duration-300 flex items-center justify-center relative z-10"
-            style={{ backgroundColor: displayShirt }}
-          >
-            {shirt !== 'none' && <div className="text-white opacity-50 font-bold text-2xl px-2 text-center absolute">🛡️</div>}
-          </div>
+        // Herní level - Dubový háj
+        const LEVEL = {
+          platforms: [
+            { id: 1, x: 0, y: 300, w: 2000, h: 100, type: 'grass' }, // Země
+            { id: 2, x: 300, y: 220, w: 120, h: 20, type: 'dirt' },  // První plošinka
+            { id: 3, x: 500, y: 140, w: 120, h: 20, type: 'dirt' },  // Druhá plošinka
+            { id: 4, x: 750, y: 200, w: 150, h: 20, type: 'dirt' },
+            { id: 5, x: 1000, y: 120, w: 100, h: 20, type: 'dirt' },
+            { id: 6, x: 1250, y: 220, w: 150, h: 20, type: 'dirt' },
+            { id: 7, x: 1550, y: 260, w: 200, h: 40, type: 'grass' }, // Plošina před dveřmi
+          ],
+          emeralds: [
+            { id: 1, x: 350, y: 180, collected: false },
+            { id: 2, x: 550, y: 100, collected: false },
+            { id: 3, x: 800, y: 160, collected: false },
+            { id: 4, x: 1030, y: 80, collected: false },
+            { id: 5, x: 1300, y: 180, collected: false },
+          ],
+          door: { x: 1650, y: 160, w: 60, h: 100 } // Dveře na konci levelu
+        };
 
-          {/* Pravá ruka (40x120) */}
-          <div className="w-[40px] h-[120px] shadow-sm transition-colors duration-300 ml-[2px]" style={{ backgroundColor: currentSkin.skin }}>
-             {/* Rukáv, pokud má tričko/brnění */}
-             {shirt !== 'none' && <div className="w-full h-[50px] shadow-sm border-b-4 border-black/10" style={{ backgroundColor: displayShirt }} />}
-          </div>
-        </div>
+        const App = () => {
+          // Stav aplikace - co má hráč právě vybráno
+          const [gameState, setGameState] = useState('wardrobe'); // 'wardrobe', 'playing', 'won'
+          const [character, setCharacter] = useState('steve');
+          const [hat, setHat] = useState('none');
+          const [shirt, setShirt] = useState('none');
+          const [shoes, setShoes] = useState('none');
+          const [activeTab, setActiveTab] = useState('postava'); // 'postava', 'hlava', 'telo', 'nohy'
 
-        {/* NOHY / BOTY */}
-        <div className="flex z-0 relative mt-[2px]">
-          {/* Bota levá */}
-          <div 
-            className="w-[40px] h-[120px] shadow-md transition-colors duration-300 relative mr-[1px]"
-            style={{ backgroundColor: currentSkin.pantsDefault }}
-          >
-             {shoes !== 'none' && (
-                <div className="absolute bottom-0 w-full h-[40px] border-t-4 border-black/10" style={{ backgroundColor: displayShoes }} />
-             )}
-          </div>
-          {/* Bota pravá */}
-          <div 
-            className="w-[40px] h-[120px] shadow-md transition-colors duration-300 relative ml-[1px]"
-            style={{ backgroundColor: currentSkin.pantsDefault }}
-          >
-             {shoes !== 'none' && (
-                <div className="absolute bottom-0 w-full h-[40px] border-t-4 border-black/10" style={{ backgroundColor: displayShoes }} />
-             )}
-          </div>
-        </div>
+          // Databáze oblečení a postaviček
+          const characters = [
+            { id: 'steve', name: 'Steve', bgColor: 'bg-blue-100' },
+            { id: 'alex', name: 'Alex', bgColor: 'bg-green-100' },
+            { id: 'koala', name: 'Koala', bgColor: 'bg-gray-100' }
+          ];
 
-      </div>
-    );
-  };
+          const wardrobe = {
+            hats: [
+              { id: 'none', name: 'Bez klobouku', color: 'transparent', icon: '👤' },
+              { id: 'diamond_helmet', name: 'Diamantová helma', color: '#82d8d8', icon: '💎' },
+              { id: 'leather_cap', name: 'Kožená čapka', color: '#8a5c32', icon: '🤠' },
+              { id: 'flower_crown', name: 'Květinová koruna', color: '#ff99cc', icon: '🌸' }
+            ],
+            shirts: [
+              { id: 'none', name: 'Základní oblečení', color: 'transparent', icon: '👕' },
+              { id: 'iron_armor', name: 'Železné brnění', color: '#e2e2e2', icon: '🛡️' },
+              { id: 'gold_armor', name: 'Zlaté brnění', color: '#fcee4e', icon: '✨' },
+              { id: 'red_shirt', name: 'Červené tričko', color: '#ff3333', icon: '🔴' }
+            ],
+            shoes: [
+              { id: 'none', name: 'Základní boty', color: 'transparent', icon: '👣' },
+              { id: 'diamond_boots', name: 'Diamantové boty', color: '#82d8d8', icon: '💎' },
+              { id: 'leather_boots', name: 'Kožené boty', color: '#8a5c32', icon: '🥾' },
+              { id: 'sneakers', name: 'Růžové tenisky', color: '#ff66b2', icon: '👟' }
+            ]
+          };
 
-  // --- Vykreslování aktuální obrazovky (Herní režimy) ---
+          // --- HERNÍ LOGIKA ---
+          const [emeraldsCount, setEmeraldsCount] = useState(0);
+          const playerRef = useRef({ x: 50, y: 200, vx: 0, vy: 0, w: 40, h: 60, isGrounded: false });
+          const keysRef = useRef({ left: false, right: false, up: false });
+          const emeraldsRef = useRef([]);
+          const scoreRef = useRef(0);
+          const requestRef = useRef();
+          const worldRef = useRef(null);
+          const playerDOMRef = useRef(null);
 
-  // HERNÍ REŽIM
-  if (gameState === 'playing') {
-    return (
-      <div className="fixed inset-0 bg-sky-300 overflow-hidden touch-none font-sans flex flex-col">
-        
-        {/* Herní UI - Skóre */}
-        <div className="absolute top-4 left-4 z-50 bg-white/90 backdrop-blur px-6 py-3 rounded-2xl shadow-lg border-2 border-emerald-200 font-bold text-xl flex items-center gap-3">
-           <span className="text-2xl animate-pulse">💎</span> {emeraldsCount} / 5
-           {emeraldsCount >= 5 && <span className="text-green-600 ml-4 animate-bounce">🚪 Dveře otevřeny!</span>}
-        </div>
-        
-        <div className="absolute top-4 right-4 z-50">
-           <button onClick={() => setGameState('wardrobe')} className="bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow border-2 border-gray-200 font-bold text-gray-700 active:scale-95 transition-transform">
-              Zpět do šatníku
-           </button>
-        </div>
+          const gameLoop = () => {
+            if (gameState !== 'playing') return;
 
-        {/* Herní Svět (kamera se hýbe s tímto blokem) */}
-        <div className="flex-1 relative">
-           <div ref={worldRef} className="absolute top-0 left-0 h-full will-change-transform" style={{ width: '2000px' }}>
-              
-              {/* Mraky / Pozadí */}
-              <div className="absolute top-20 left-40 text-6xl opacity-50">☁️</div>
-              <div className="absolute top-10 left-80 text-8xl opacity-30">☁️</div>
-              <div className="absolute top-30 left-[800px] text-6xl opacity-50">☁️</div>
-              <div className="absolute top-16 left-[1400px] text-8xl opacity-40">☁️</div>
+            const p = playerRef.current;
+            const jumpForce = -12;
+            const gravity = 0.6;   
+            const friction = 0.8;  
 
-              {/* Platformy */}
-              {LEVEL.platforms.map(plat => (
-                 <div key={plat.id} className="absolute shadow-sm" style={{ 
-                    left: plat.x, top: plat.y, width: plat.w, height: plat.h,
-                    backgroundColor: plat.type === 'grass' ? '#4ade80' : '#8b5cf6', // Zelená tráva
-                    borderTop: plat.type === 'grass' ? '12px solid #22c55e' : '4px solid #7c3aed',
-                    borderRadius: '8px'
-                 }}>
-                   {plat.type === 'grass' && <div className="w-full h-full opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9IiMwMDAiLz48L3N2Zz4=')]"></div>}
-                 </div>
-              ))}
+            if (keysRef.current.left) p.vx -= 1.5;
+            if (keysRef.current.right) p.vx += 1.5;
+            p.vx *= friction;
+            p.vy += gravity;
 
-              {/* Dveře (Konec levelu) */}
-              <div className="absolute flex items-end justify-center z-0" style={{ left: LEVEL.door.x, top: LEVEL.door.y, width: LEVEL.door.w, height: LEVEL.door.h }}>
-                 <div className={`w-full h-full rounded-t-lg flex flex-col items-center justify-center transition-all duration-500 border-4 border-b-0 ${emeraldsCount >= 5 ? 'bg-black border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.8)]' : 'bg-amber-800 border-amber-950'}`}>
-                    {emeraldsCount < 5 ? (
-                       <span className="text-4xl mb-4">🔒</span>
-                    ) : (
-                       <div className="w-full h-full bg-gradient-to-b from-purple-500 to-black animate-pulse rounded-t-sm opacity-80" />
-                    )}
-                 </div>
+            if (p.vy > 12) p.vy = 12;
+
+            p.x += p.vx;
+            if (p.x < 0) { p.x = 0; p.vx = 0; } 
+            if (p.x > 1960) { p.x = 1960; p.vx = 0; } 
+
+            for (let box of LEVEL.platforms) {
+              if (p.x < box.x + box.w && p.x + p.w > box.x && p.y < box.y + box.h && p.y + p.h > box.y) {
+                if (p.vx > 0) p.x = box.x - p.w;
+                else if (p.vx < 0) p.x = box.x + box.w;
+                p.vx = 0;
+              }
+            }
+
+            p.y += p.vy;
+            p.isGrounded = false;
+            for (let box of LEVEL.platforms) {
+              if (p.x < box.x + box.w && p.x + p.w > box.x && p.y < box.y + box.h && p.y + p.h > box.y) {
+                if (p.vy > 0) { 
+                  p.y = box.y - p.h;
+                  p.isGrounded = true;
+                } else if (p.vy < 0) { 
+                  p.y = box.y + box.h;
+                }
+                p.vy = 0;
+              }
+            }
+            
+            if (p.y > 500) {
+               p.x = 50; p.y = 200; p.vx = 0; p.vy = 0;
+            }
+
+            if (keysRef.current.up && p.isGrounded) {
+              p.vy = jumpForce;
+              p.isGrounded = false;
+            }
+
+            let emChanged = false;
+            for (let em of emeraldsRef.current) {
+              if (!em.collected && p.x < em.x + 30 && p.x + p.w > em.x && p.y < em.y + 30 && p.y + p.h > em.y) {
+                em.collected = true;
+                emChanged = true;
+                const emNode = document.getElementById(`emerald-${em.id}`);
+                if (emNode) emNode.style.opacity = '0'; 
+              }
+            }
+            
+            if (emChanged) {
+              const count = emeraldsRef.current.filter(e => e.collected).length;
+              scoreRef.current = count;
+              setEmeraldsCount(count); 
+            }
+
+            if (scoreRef.current >= 5) {
+              const d = LEVEL.door;
+              if (p.x < d.x + d.w && p.x + p.w > d.x && p.y < d.y + d.h && p.y + p.h > d.y) {
+                setGameState('won'); 
+                return; 
+              }
+            }
+
+            if (playerDOMRef.current) {
+              playerDOMRef.current.style.transform = `translate(${p.x}px, ${p.y}px)`;
+            }
+            if (worldRef.current) {
+              const cameraX = Math.max(0, Math.min(p.x - window.innerWidth / 3, 2000 - window.innerWidth));
+              worldRef.current.style.transform = `translateX(${-cameraX}px)`;
+            }
+
+            requestRef.current = requestAnimationFrame(gameLoop);
+          };
+
+          useEffect(() => {
+            if (gameState === 'playing') {
+              requestRef.current = requestAnimationFrame(gameLoop);
+            }
+            return () => cancelAnimationFrame(requestRef.current);
+          }, [gameState]);
+
+
+          // Vykreslení postavičky (Hranatá Minecraft grafika)
+          const renderCharacter = () => {
+            const skins = {
+              steve: { skin: '#d2b48c', shirtDefault: '#00aaaa', pantsDefault: '#4a4a9c' },
+              alex:  { skin: '#f3c5a3', shirtDefault: '#6a9c4a', pantsDefault: '#784a21' },
+              koala: { skin: '#a0a0a0', shirtDefault: '#b0b0b0', pantsDefault: '#909090' }
+            };
+
+            const currentSkin = skins[character];
+            const currentHatColor = wardrobe.hats.find(h => h.id === hat)?.color;
+            const currentShirtColor = wardrobe.shirts.find(s => s.id === shirt)?.color;
+            const currentShoesColor = wardrobe.shoes.find(s => s.id === shoes)?.color;
+
+            const displayShirt = currentShirtColor === 'transparent' ? currentSkin.shirtDefault : currentShirtColor;
+            const displayShoes = currentShoesColor === 'transparent' ? currentSkin.pantsDefault : currentShoesColor;
+
+            return (
+              <div className="relative flex flex-col items-center justify-center w-64 h-[350px] mx-auto transition-all duration-300">
+                
+                {/* HLAVA (Hranatá 80x80) */}
+                <div className="relative z-20 w-[80px] h-[80px] shadow-sm" style={{ backgroundColor: currentSkin.skin }}>
+                  {hat !== 'none' && (
+                    <div 
+                      className="absolute -top-2 -left-1 -right-1 h-[40px] z-30 transition-colors duration-300 shadow-sm"
+                      style={{ backgroundColor: currentHatColor, borderBottom: '4px solid rgba(0,0,0,0.2)' }}
+                    />
+                  )}
+                  
+                  {character === 'koala' ? (
+                     <React.Fragment>
+                       <div className="absolute -left-6 -top-2 w-[30px] h-[30px] bg-gray-400 z-10 shadow-sm" />
+                       <div className="absolute -right-6 -top-2 w-[30px] h-[30px] bg-gray-400 z-10 shadow-sm" />
+                       <div className="absolute top-[30px] w-full flex justify-center space-x-6 z-20">
+                         <div className="w-[10px] h-[10px] bg-black" />
+                         <div className="w-[10px] h-[10px] bg-black" />
+                       </div>
+                       <div className="w-[20px] h-[30px] bg-gray-800 absolute top-[40px] left-[30px] z-20" />
+                     </React.Fragment>
+                  ) : (
+                     <React.Fragment>
+                       {character === 'alex' && <div className="absolute top-0 left-0 w-full h-[20px] bg-orange-500 z-20 shadow-sm" />}
+                       {character === 'steve' && <div className="absolute top-0 left-0 w-full h-[20px] bg-gray-800 z-20 shadow-sm" />}
+                       <div className="absolute top-[40px] w-full flex justify-center space-x-4 z-20">
+                         <div className="w-[15px] h-[10px] bg-white flex items-center justify-start"><div className="w-[8px] h-[10px] bg-blue-600" /></div>
+                         <div className="w-[15px] h-[10px] bg-white flex items-center justify-start"><div className="w-[8px] h-[10px] bg-blue-600" /></div>
+                       </div>
+                     </React.Fragment>
+                  )}
+                </div>
+
+                {/* TĚLO A RUCE */}
+                <div className="flex z-10 relative mt-[2px]">
+                  {/* Levá ruka */}
+                  <div className="w-[40px] h-[120px] shadow-sm transition-colors duration-300 mr-[2px]" style={{ backgroundColor: currentSkin.skin }}>
+                     {shirt !== 'none' && <div className="w-full h-[50px] shadow-sm border-b-4 border-black/10" style={{ backgroundColor: displayShirt }} />}
+                  </div>
+                  
+                  {/* Hrudník */}
+                  <div 
+                    className="w-[80px] h-[120px] shadow-md transition-colors duration-300 flex items-center justify-center relative z-10"
+                    style={{ backgroundColor: displayShirt }}
+                  >
+                    {shirt !== 'none' && <div className="text-white opacity-50 font-bold text-2xl px-2 text-center absolute">🛡️</div>}
+                  </div>
+
+                  {/* Pravá ruka */}
+                  <div className="w-[40px] h-[120px] shadow-sm transition-colors duration-300 ml-[2px]" style={{ backgroundColor: currentSkin.skin }}>
+                     {shirt !== 'none' && <div className="w-full h-[50px] shadow-sm border-b-4 border-black/10" style={{ backgroundColor: displayShirt }} />}
+                  </div>
+                </div>
+
+                {/* NOHY / BOTY */}
+                <div className="flex z-0 relative mt-[2px]">
+                  <div className="w-[40px] h-[120px] shadow-md transition-colors duration-300 relative mr-[1px]" style={{ backgroundColor: currentSkin.pantsDefault }}>
+                     {shoes !== 'none' && <div className="absolute bottom-0 w-full h-[40px] border-t-4 border-black/10" style={{ backgroundColor: displayShoes }} />}
+                  </div>
+                  <div className="w-[40px] h-[120px] shadow-md transition-colors duration-300 relative ml-[1px]" style={{ backgroundColor: currentSkin.pantsDefault }}>
+                     {shoes !== 'none' && <div className="absolute bottom-0 w-full h-[40px] border-t-4 border-black/10" style={{ backgroundColor: displayShoes }} />}
+                  </div>
+                </div>
+
               </div>
+            );
+          };
 
-              {/* Emeraldy ke sbírání */}
-              {emeraldsRef.current.map(em => (
-                 <div id={`emerald-${em.id}`} key={em.id} className="absolute text-3xl animate-bounce drop-shadow-md z-10 transition-opacity duration-200" style={{ left: em.x, top: em.y }}>
-                    💎
-                 </div>
-              ))}
+          // HERNÍ REŽIM
+          if (gameState === 'playing') {
+            return (
+              <div className="fixed inset-0 bg-sky-300 overflow-hidden touch-none font-sans flex flex-col">
+                <div className="absolute top-4 left-4 z-50 bg-white/90 backdrop-blur px-6 py-3 rounded-2xl shadow-lg border-2 border-emerald-200 font-bold text-xl flex items-center gap-3">
+                   <span className="text-2xl animate-pulse">💎</span> {emeraldsCount} / 5
+                   {emeraldsCount >= 5 && <span className="text-green-600 ml-4 animate-bounce">🚪 Dveře otevřeny!</span>}
+                </div>
+                
+                <div className="absolute top-4 right-4 z-50">
+                   <button onClick={() => setGameState('wardrobe')} className="bg-white/90 backdrop-blur px-4 py-2 rounded-xl shadow border-2 border-gray-200 font-bold text-gray-700 active:scale-95 transition-transform">
+                      Zpět
+                   </button>
+                </div>
 
-              {/* Náš hráč (Postavička z šatníku) */}
-              <div ref={playerDOMRef} className="absolute will-change-transform z-20 flex justify-center" style={{ width: 40, height: 60, transform: 'translate(50px, 200px)' }}>
-                 {/* Zmenšíme velkou postavičku na herní velikost */}
-                 <div className="origin-top flex justify-center pointer-events-none" style={{ transform: 'scale(0.2) translateY(-40px)', width: 200 }}>
+                <div className="flex-1 relative">
+                   <div ref={worldRef} className="absolute top-0 left-0 h-full will-change-transform" style={{ width: '2000px' }}>
+                      
+                      <div className="absolute top-20 left-40 text-6xl opacity-50">☁️</div>
+                      <div className="absolute top-10 left-80 text-8xl opacity-30">☁️</div>
+                      <div className="absolute top-30 left-[800px] text-6xl opacity-50">☁️</div>
+                      <div className="absolute top-16 left-[1400px] text-8xl opacity-40">☁️</div>
+
+                      {LEVEL.platforms.map(plat => (
+                         <div key={plat.id} className="absolute shadow-sm" style={{ 
+                            left: plat.x, top: plat.y, width: plat.w, height: plat.h,
+                            backgroundColor: plat.type === 'grass' ? '#4ade80' : '#8b5cf6',
+                            borderTop: plat.type === 'grass' ? '12px solid #22c55e' : '4px solid #7c3aed',
+                            borderRadius: '8px'
+                         }}>
+                           {plat.type === 'grass' && <div className="w-full h-full opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9IiMwMDAiLz48L3N2Zz4=')]"></div>}
+                         </div>
+                      ))}
+
+                      <div className="absolute flex items-end justify-center z-0" style={{ left: LEVEL.door.x, top: LEVEL.door.y, width: LEVEL.door.w, height: LEVEL.door.h }}>
+                         <div className={`w-full h-full rounded-t-lg flex flex-col items-center justify-center transition-all duration-500 border-4 border-b-0 ${emeraldsCount >= 5 ? 'bg-black border-purple-500 shadow-[0_0_30px_rgba(168,85,247,0.8)]' : 'bg-amber-800 border-amber-950'}`}>
+                            {emeraldsCount < 5 ? (
+                               <span className="text-4xl mb-4">🔒</span>
+                            ) : (
+                               <div className="w-full h-full bg-gradient-to-b from-purple-500 to-black animate-pulse rounded-t-sm opacity-80" />
+                            )}
+                         </div>
+                      </div>
+
+                      {emeraldsRef.current.map(em => (
+                         <div id={`emerald-${em.id}`} key={em.id} className="absolute text-3xl animate-bounce drop-shadow-md z-10 transition-opacity duration-200" style={{ left: em.x, top: em.y }}>
+                            💎
+                         </div>
+                      ))}
+
+                      <div ref={playerDOMRef} className="absolute will-change-transform z-20 flex justify-center" style={{ width: 40, height: 60, transform: 'translate(50px, 200px)' }}>
+                         <div className="origin-top flex justify-center pointer-events-none" style={{ transform: 'scale(0.15) translateY(-20px)', width: 200 }}>
+                            {renderCharacter()}
+                         </div>
+                      </div>
+                   </div>
+                </div>
+
+                {/* Ovládání pro dotykové obrazovky (joystick a skok) */}
+                <div className="h-44 bg-gradient-to-t from-sky-500/30 to-transparent flex items-end pb-8 justify-between px-8 sm:px-16 z-50 select-none">
+                   <div className="flex gap-4 sm:gap-8">
+                      <button 
+                         onPointerDown={(e) => { e.preventDefault(); keysRef.current.left = true; }}
+                         onPointerUp={(e) => { e.preventDefault(); keysRef.current.left = false; }}
+                         onPointerLeave={() => keysRef.current.left = false}
+                         className="w-20 h-20 sm:w-24 sm:h-24 bg-white/90 backdrop-blur rounded-full shadow-xl flex items-center justify-center text-4xl active:bg-gray-200 active:scale-90 transition-transform"
+                      >
+                         ⬅️
+                      </button>
+                      <button 
+                         onPointerDown={(e) => { e.preventDefault(); keysRef.current.right = true; }}
+                         onPointerUp={(e) => { e.preventDefault(); keysRef.current.right = false; }}
+                         onPointerLeave={() => keysRef.current.right = false}
+                         className="w-20 h-20 sm:w-24 sm:h-24 bg-white/90 backdrop-blur rounded-full shadow-xl flex items-center justify-center text-4xl active:bg-gray-200 active:scale-90 transition-transform"
+                      >
+                         ➡️
+                      </button>
+                   </div>
+                   
+                   <div>
+                      <button 
+                         onPointerDown={(e) => { e.preventDefault(); keysRef.current.up = true; }}
+                         onPointerUp={(e) => { e.preventDefault(); keysRef.current.up = false; }}
+                         onPointerLeave={() => keysRef.current.up = false}
+                         className="w-24 h-24 sm:w-28 sm:h-28 bg-blue-500 rounded-full shadow-xl border-4 border-white flex items-center justify-center text-5xl active:bg-blue-600 active:scale-90 transition-transform text-white"
+                      >
+                         ⬆️
+                      </button>
+                   </div>
+                </div>
+              </div>
+            );
+          }
+
+          // OBRAZOVKA VÍTĚZSTVÍ
+          if (gameState === 'won') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-green-300 to-emerald-600 flex flex-col items-center justify-center font-sans p-4 text-center text-white">
+                 <div className="text-8xl mb-8 animate-bounce">🎉</div>
+                 <h1 className="text-5xl font-black mb-4 drop-shadow-lg">Úroveň Dokončena!</h1>
+                 <p className="text-2xl mb-12 font-medium opacity-90">Zvládl jsi posbírat všechny emeraldy a najít dveře.</p>
+                 
+                 <div className="flex justify-center transform scale-50 mb-8">
                     {renderCharacter()}
                  </div>
+
+                 <button 
+                    onClick={() => setGameState('wardrobe')}
+                    className="bg-white text-emerald-600 px-8 py-4 rounded-full font-bold text-2xl shadow-xl hover:bg-gray-50 active:scale-95 transition-all"
+                 >
+                    Zpět do šatníku
+                 </button>
               </div>
+            );
+          }
 
-           </div>
-        </div>
+          // ZÁKLADNÍ REŽIM: ŠATNÍK
+          return (
+            <div className="min-h-screen bg-sky-100 flex flex-col font-sans selection:bg-blue-300">
+              <header className="bg-white/80 backdrop-blur-md p-4 shadow-sm text-center">
+                <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
+                  🎮 Můj Dobrodružný Svět
+                </h1>
+                <p className="text-gray-500 font-medium">Krok 1: Připrav si svého hrdinu!</p>
+              </header>
 
-        {/* Ovládání pro dotykové obrazovky (joystick a skok) */}
-        <div className="h-44 bg-gradient-to-t from-sky-500/30 to-transparent flex items-end pb-8 justify-between px-8 sm:px-16 z-50 select-none">
-           <div className="flex gap-4 sm:gap-8">
-              <button 
-                 onPointerDown={(e) => { e.preventDefault(); keysRef.current.left = true; }}
-                 onPointerUp={(e) => { e.preventDefault(); keysRef.current.left = false; }}
-                 onPointerLeave={() => keysRef.current.left = false}
-                 className="w-20 h-20 sm:w-24 sm:h-24 bg-white/90 backdrop-blur rounded-full shadow-xl flex items-center justify-center text-4xl active:bg-gray-200 active:scale-90 transition-transform"
-              >
-                 ⬅️
-              </button>
-              <button 
-                 onPointerDown={(e) => { e.preventDefault(); keysRef.current.right = true; }}
-                 onPointerUp={(e) => { e.preventDefault(); keysRef.current.right = false; }}
-                 onPointerLeave={() => keysRef.current.right = false}
-                 className="w-20 h-20 sm:w-24 sm:h-24 bg-white/90 backdrop-blur rounded-full shadow-xl flex items-center justify-center text-4xl active:bg-gray-200 active:scale-90 transition-transform"
-              >
-                 ➡️
-              </button>
-           </div>
-           
-           <div>
-              <button 
-                 onPointerDown={(e) => { e.preventDefault(); keysRef.current.up = true; }}
-                 onPointerUp={(e) => { e.preventDefault(); keysRef.current.up = false; }}
-                 onPointerLeave={() => keysRef.current.up = false}
-                 className="w-24 h-24 sm:w-28 sm:h-28 bg-blue-500 rounded-full shadow-xl border-4 border-white flex items-center justify-center text-5xl active:bg-blue-600 active:scale-90 transition-transform text-white"
-              >
-                 ⬆️
-              </button>
-           </div>
-        </div>
-      </div>
-    );
-  }
+              <main className="flex-1 flex flex-col md:flex-row max-w-6xl w-full mx-auto p-4 gap-6">
+                
+                <div className="bg-white rounded-3xl shadow-xl flex-1 p-6 flex flex-col items-center justify-center border-4 border-indigo-100 relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-300 via-transparent to-transparent" />
+                  <h2 className="text-xl font-bold text-gray-700 mb-4 z-10 bg-white/50 px-4 py-1 rounded-full backdrop-blur-sm">Zrcadlo</h2>
+                  
+                  <div className="transform scale-75 origin-top">
+                     {renderCharacter()}
+                  </div>
 
-  // OBRAZOVKA VÍTĚZSTVÍ
-  if (gameState === 'won') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-green-300 to-emerald-600 flex flex-col items-center justify-center font-sans p-4 text-center text-white">
-         <div className="text-8xl mb-8 animate-bounce">🎉</div>
-         <h1 className="text-5xl font-black mb-4 drop-shadow-lg">Úroveň Dokončena!</h1>
-         <p className="text-2xl mb-12 font-medium opacity-90">Zvládl jsi posbírat všechny emeraldy a najít dveře.</p>
-         
-         <div className="flex justify-center transform scale-75 mb-8">
-            {renderCharacter()}
-         </div>
+                  <div className="mt-8 z-10 w-full px-4">
+                    <button 
+                      onClick={() => {
+                        playerRef.current = { x: 50, y: 200, vx: 0, vy: 0, w: 40, h: 60, isGrounded: false };
+                        keysRef.current = { left: false, right: false, up: false };
+                        emeraldsRef.current = LEVEL.emeralds.map(e => ({...e})); 
+                        scoreRef.current = 0;
+                        setEmeraldsCount(0);
+                        setGameState('playing');
+                      }}
+                      className="w-full bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white text-xl font-bold py-4 rounded-2xl shadow-lg transform transition active:scale-95 flex items-center justify-center gap-2"
+                    >
+                      Jít hrát! ➔
+                    </button>
+                  </div>
+                </div>
 
-         <button 
-            onClick={() => setGameState('wardrobe')}
-            className="bg-white text-emerald-600 px-8 py-4 rounded-full font-bold text-2xl shadow-xl hover:bg-gray-50 active:scale-95 transition-all"
-         >
-            Zpět do šatníku
-         </button>
-      </div>
-    );
-  }
+                <div className="bg-white rounded-3xl shadow-xl w-full md:w-[450px] flex flex-col overflow-hidden border-4 border-amber-100">
+                  <div className="flex bg-gray-50 border-b-2 border-gray-100 p-2 gap-2 overflow-x-auto">
+                    {[
+                      { id: 'postava', label: '👤 Kdo jsi?' },
+                      { id: 'hlava', label: '🧢 Klobouky' },
+                      { id: 'telo', label: '👕 Oblečení' },
+                      { id: 'nohy', label: '👟 Boty' }
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`whitespace-nowrap flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 ${
+                          activeTab === tab.id 
+                            ? 'bg-indigo-500 text-white shadow-md transform scale-105' 
+                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
 
-  // ZÁKLADNÍ REŽIM: ŠATNÍK
-  return (
-    <div className="min-h-screen bg-sky-100 flex flex-col font-sans selection:bg-blue-300">
-      
-      {/* Hlavička */}
-      <header className="bg-white/80 backdrop-blur-md p-4 shadow-sm text-center">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
-          🎮 Můj Dobrodružný Svět
-        </h1>
-        <p className="text-gray-500 font-medium">Krok 1: Připrav si svého hrdinu!</p>
-      </header>
+                  <div className="flex-1 p-4 bg-gray-50 overflow-y-auto">
+                    {activeTab === 'postava' && (
+                      <div className="grid grid-cols-1 gap-4">
+                        {characters.map(char => (
+                          <button
+                            key={char.id}
+                            onClick={() => setCharacter(char.id)}
+                            className={`flex items-center gap-4 p-4 rounded-2xl border-4 transition-all ${
+                              character === char.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
+                            }`}
+                          >
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-inner ${char.bgColor}`}>
+                              {char.id === 'koala' ? '🐨' : char.id === 'alex' ? '👩' : '👨'}
+                            </div>
+                            <span className="text-xl font-bold text-gray-700">{char.name}</span>
+                            {character === char.id && <span className="ml-auto text-2xl">✅</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-      {/* Hlavní obsah */}
-      <main className="flex-1 flex flex-col md:flex-row max-w-6xl w-full mx-auto p-4 gap-6">
-        
-        {/* Levá část: Náhled postavičky (Zrcadlo) */}
-        <div className="bg-white rounded-3xl shadow-xl flex-1 p-6 flex flex-col items-center justify-center border-4 border-indigo-100 relative overflow-hidden">
-          <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-300 via-transparent to-transparent" />
-          
-          <h2 className="text-xl font-bold text-gray-700 mb-4 z-10 bg-white/50 px-4 py-1 rounded-full backdrop-blur-sm">Zrcadlo</h2>
-          
-          {renderCharacter()}
+                    {activeTab === 'hlava' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        {wardrobe.hats.map(item => (
+                          <button
+                            key={item.id}
+                            onClick={() => setHat(item.id)}
+                            className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border-4 transition-all ${
+                              hat === item.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
+                            }`}
+                          >
+                            <span className="text-4xl">{item.icon}</span>
+                            <span className="font-semibold text-gray-700 text-center text-sm">{item.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-          <div className="mt-8 z-10 w-full px-4">
-            <button 
-              onClick={() => {
-                // Přepne z oblékání na hraní a vyresetuje level
-                playerRef.current = { x: 50, y: 200, vx: 0, vy: 0, w: 40, h: 60, isGrounded: false };
-                keysRef.current = { left: false, right: false, up: false };
-                emeraldsRef.current = LEVEL.emeralds.map(e => ({...e})); // Nasype emeraldy
-                scoreRef.current = 0;
-                setEmeraldsCount(0);
-                setGameState('playing');
-              }}
-              className="w-full bg-gradient-to-r from-green-400 to-emerald-500 hover:from-green-500 hover:to-emerald-600 text-white text-xl font-bold py-4 rounded-2xl shadow-lg transform transition active:scale-95 flex items-center justify-center gap-2"
-            >
-              Jít hrát! ➔
-            </button>
-          </div>
-        </div>
+                    {activeTab === 'telo' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        {wardrobe.shirts.map(item => (
+                          <button
+                            key={item.id}
+                            onClick={() => setShirt(item.id)}
+                            className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border-4 transition-all ${
+                              shirt === item.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
+                            }`}
+                          >
+                            <span className="text-4xl">{item.icon}</span>
+                            <span className="font-semibold text-gray-700 text-center text-sm">{item.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
-        {/* Pravá část: Šatník (Ovládání) */}
-        <div className="bg-white rounded-3xl shadow-xl w-full md:w-[450px] flex flex-col overflow-hidden border-4 border-amber-100">
-          
-          {/* Navigace šatníku (Záložky) */}
-          <div className="flex bg-gray-50 border-b-2 border-gray-100 p-2 gap-2 overflow-x-auto">
-            {[
-              { id: 'postava', label: '👤 Kdo jsi?' },
-              { id: 'hlava', label: '🧢 Klobouky' },
-              { id: 'telo', label: '👕 Oblečení' },
-              { id: 'nohy', label: '👟 Boty' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 ${
-                  activeTab === tab.id 
-                    ? 'bg-indigo-500 text-white shadow-md transform scale-105' 
-                    : 'bg-white text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+                    {activeTab === 'nohy' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        {wardrobe.shoes.map(item => (
+                          <button
+                            key={item.id}
+                            onClick={() => setShoes(item.id)}
+                            className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border-4 transition-all ${
+                              shoes === item.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
+                            }`}
+                          >
+                            <span className="text-4xl">{item.icon}</span>
+                            <span className="font-semibold text-gray-700 text-center text-sm">{item.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-          {/* Obsah šatníku */}
-          <div className="flex-1 p-4 bg-gray-50 overflow-y-auto">
-            
-            {/* Výběr postavy */}
-            {activeTab === 'postava' && (
-              <div className="grid grid-cols-1 gap-4">
-                {characters.map(char => (
-                  <button
-                    key={char.id}
-                    onClick={() => setCharacter(char.id)}
-                    className={`flex items-center gap-4 p-4 rounded-2xl border-4 transition-all ${
-                      character === char.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
-                    }`}
-                  >
-                    <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl shadow-inner ${char.bgColor}`}>
-                      {char.id === 'koala' ? '🐨' : char.id === 'alex' ? '👩' : '👨'}
-                    </div>
-                    <span className="text-xl font-bold text-gray-700">{char.name}</span>
-                    {character === char.id && <span className="ml-auto text-2xl">✅</span>}
-                  </button>
-                ))}
-              </div>
-            )}
+              </main>
+            </div>
+          );
+        };
 
-            {/* Výběr Klobouků */}
-            {activeTab === 'hlava' && (
-              <div className="grid grid-cols-2 gap-3">
-                {wardrobe.hats.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setHat(item.id)}
-                    className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border-4 transition-all ${
-                      hat === item.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
-                    }`}
-                  >
-                    <span className="text-4xl">{item.icon}</span>
-                    <span className="font-semibold text-gray-700 text-center text-sm">{item.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Výběr Oblečení */}
-            {activeTab === 'telo' && (
-              <div className="grid grid-cols-2 gap-3">
-                {wardrobe.shirts.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setShirt(item.id)}
-                    className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border-4 transition-all ${
-                      shirt === item.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
-                    }`}
-                  >
-                    <span className="text-4xl">{item.icon}</span>
-                    <span className="font-semibold text-gray-700 text-center text-sm">{item.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Výběr Bot */}
-            {activeTab === 'nohy' && (
-              <div className="grid grid-cols-2 gap-3">
-                {wardrobe.shoes.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setShoes(item.id)}
-                    className={`p-4 rounded-2xl flex flex-col items-center justify-center gap-2 border-4 transition-all ${
-                      shoes === item.id ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white hover:bg-gray-100 shadow-sm'
-                    }`}
-                  >
-                    <span className="text-4xl">{item.icon}</span>
-                    <span className="font-semibold text-gray-700 text-center text-sm">{item.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-          </div>
-        </div>
-
-      </main>
-    </div>
-  );
-};
-
-export default App;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
