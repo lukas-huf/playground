@@ -221,7 +221,12 @@
             }
             if (worldRef.current) {
               const cameraX = Math.max(0, Math.min(p.x - window.innerWidth / 3, 2000 - window.innerWidth));
-              worldRef.current.style.transform = `translateX(${-cameraX}px)`;
+              
+              // NOVINKA: Kamera nyní sleduje hráče i svisle (hlavně kvůli mobilům na šířku).
+              // Výpočet zajistí, že panáček je vždy bezpečně v zorném poli nad tlačítky.
+              const cameraY = p.y - window.innerHeight * 0.55; 
+              
+              worldRef.current.style.transform = `translate(${-cameraX}px, ${-cameraY}px)`;
             }
 
             requestRef.current = requestAnimationFrame(gameLoop);
@@ -347,10 +352,12 @@
                 <div className="flex-1 relative">
                    <div ref={worldRef} className="absolute top-0 left-0 h-full will-change-transform" style={{ width: '2000px' }}>
                       
-                      <div className="absolute top-20 left-40 text-6xl opacity-50">☁️</div>
-                      <div className="absolute top-10 left-80 text-8xl opacity-30">☁️</div>
-                      <div className="absolute top-30 left-[800px] text-6xl opacity-50">☁️</div>
-                      <div className="absolute top-16 left-[1400px] text-8xl opacity-40">☁️</div>
+                      {/* Mráčky - posunuté níže do zorného pole kamery */}
+                      <div className="absolute top-[300px] left-40 text-6xl opacity-50">☁️</div>
+                      <div className="absolute top-[200px] left-[350px] text-8xl opacity-30">☁️</div>
+                      <div className="absolute top-[350px] left-[800px] text-6xl opacity-50">☁️</div>
+                      <div className="absolute top-[250px] left-[1300px] text-8xl opacity-40">☁️</div>
+                      <div className="absolute top-[300px] left-[1700px] text-7xl opacity-50">☁️</div>
 
                       {/* Duby (stromy) */}
                       {LEVEL.trees.map(tree => (
