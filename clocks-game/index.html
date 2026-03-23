@@ -243,7 +243,7 @@
           };
 
           const nextLevel = () => {
-            setBlocksRevealed(Array(16).fill(false));
+            setBlocksRevealed(Array(9).fill(false));
             setIsLevelComplete(false);
             setTargetTime(generateRandomTime());
             setHands({ h: Math.floor(Math.random() * 12), m: Math.floor(Math.random() * 60) });
@@ -351,7 +351,7 @@
                         <RewardDisplay imagePath={currentImagePath} />
                       </div>
 
-                      <div className="absolute inset-0 grid grid-cols-4 grid-rows-4">
+                      <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
                         {blocksRevealed.map((isRevealed, index) => (
                           <div 
                             key={index} 
@@ -392,7 +392,7 @@
                       <span>Zkontrolovat</span>
                     </button>
                     <div className="mt-1 sm:mt-2 text-[10px] sm:text-xs md:text-base text-slate-500 font-medium">
-                      Odhaleno: {blocksRevealed.filter(Boolean).length} / 16
+                      Odhaleno: {blocksRevealed.filter(Boolean).length} / 9
                     </div>
                   </div>
                 </section>
