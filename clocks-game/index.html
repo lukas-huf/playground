@@ -266,13 +266,13 @@
           const formatTime = (h, m) => `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 
           return (
-            <div className="h-full w-full bg-slate-100 font-sans p-2 flex flex-col items-center select-none overflow-hidden"
+            <div className="h-full w-full bg-slate-100 font-sans p-1 sm:p-2 flex flex-col items-center select-none overflow-hidden"
                  onPointerUp={handlePointerUp}
                  onPointerLeave={handlePointerUp}
                  onTouchEnd={handlePointerUp}>
               
-              <header className="flex-none mb-2 text-center w-full max-w-5xl">
-                <h1 className="text-xl sm:text-2xl md:text-4xl font-bold text-slate-800 mb-1 sm:mb-2">Kolik je hodin?</h1>
+              <header className="flex-none mb-1 sm:mb-2 text-center w-full max-w-5xl">
+                <h1 className="hidden sm:block text-xl sm:text-2xl md:text-4xl font-bold text-slate-800 mb-1 sm:mb-2">Kolik je hodin?</h1>
                 <div className={`p-1 sm:p-2 rounded-lg sm:rounded-xl border-2 font-medium text-xs sm:text-sm md:text-xl transition-colors
                   ${message.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : 
                     message.type === 'error' ? 'bg-red-100 border-red-400 text-red-800' : 
@@ -281,11 +281,11 @@
                 </div>
               </header>
 
-              <main className="flex-1 min-h-0 flex flex-row gap-2 sm:gap-6 w-full max-w-5xl justify-center items-stretch pb-1">
+              <main className="flex-1 min-h-0 flex flex-row gap-1 sm:gap-6 w-full max-w-5xl justify-center items-stretch pb-1">
                 
                 {/* LEVÁ STRANA */}
-                <section className="flex-1 min-h-0 flex flex-col items-center justify-between bg-white p-2 sm:p-4 rounded-xl sm:rounded-3xl shadow-lg border-2 sm:border-4 border-slate-200">
-                  <div className="flex-none bg-slate-800 text-white font-mono text-3xl sm:text-5xl md:text-7xl p-1 px-3 sm:p-2 sm:px-6 md:p-4 md:px-8 rounded-lg sm:rounded-2xl shadow-inner border-2 sm:border-4 border-slate-900 tracking-wider">
+                <section className="flex-1 min-h-0 flex flex-col items-center justify-between bg-white p-1.5 sm:p-4 rounded-xl sm:rounded-3xl shadow-lg border-2 sm:border-4 border-slate-200">
+                  <div className="flex-none bg-slate-800 text-white font-mono text-2xl sm:text-5xl md:text-7xl py-1 px-3 sm:p-2 sm:px-6 md:p-4 md:px-8 rounded-lg sm:rounded-2xl shadow-inner border-2 sm:border-4 border-slate-900 tracking-wider">
                     {formatTime(targetTime.h, targetTime.m)}
                   </div>
 
@@ -344,12 +344,12 @@
                     </svg>
                   </div>
                   
-                  <div className="flex-none w-full flex flex-col items-center">
-                    <p className="text-center text-slate-500 mt-0 mb-1 sm:mb-3 text-[10px] sm:text-xs md:text-sm font-medium">Táhni prstem za ručičky</p>
+                  <div className="flex-none w-full flex flex-col items-center mt-1 sm:mt-0">
+                    <p className="hidden sm:block text-center text-slate-500 mt-0 mb-1 sm:mb-3 text-[10px] sm:text-xs md:text-sm font-medium">Táhni prstem za ručičky</p>
                     <button 
                       onClick={checkTime}
                       disabled={isLevelComplete}
-                      className="w-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-bold py-2 sm:py-3 md:py-4 px-2 md:px-8 rounded-lg sm:rounded-xl text-sm sm:text-lg md:text-xl flex items-center justify-center gap-1 sm:gap-2 shadow-lg transition-transform active:scale-95 disabled:opacity-50"
+                      className="w-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-bold py-1.5 sm:py-3 md:py-4 px-2 md:px-8 rounded-lg sm:rounded-xl text-sm sm:text-lg md:text-xl flex items-center justify-center gap-1 sm:gap-2 shadow-lg transition-transform active:scale-95 disabled:opacity-50"
                     >
                       <CheckIcon />
                       <span className="hidden sm:inline">Zkontrolovat</span>
