@@ -21,7 +21,12 @@
             overscroll-behavior-y: contain;
             user-select: none;
             -webkit-user-select: none;
-            touch-action: pan-x pan-y;
+            touch-action: none;
+            overflow: hidden;
+        }
+        #root {
+            height: 100dvh;
+            width: 100vw;
         }
         svg {
             touch-action: none; /* Pro plynulé tažení ručiček na tabletu */
@@ -261,14 +266,14 @@
           const formatTime = (h, m) => `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 
           return (
-            <div className="min-h-screen bg-slate-100 font-sans p-2 sm:p-4 md:p-8 flex flex-col items-center select-none"
+            <div className="h-full w-full bg-slate-100 font-sans p-2 flex flex-col items-center select-none overflow-hidden"
                  onPointerUp={handlePointerUp}
                  onPointerLeave={handlePointerUp}
                  onTouchEnd={handlePointerUp}>
               
-              <header className="mb-4 md:mb-6 text-center w-full max-w-5xl">
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-slate-800 mb-2">Kolik je hodin?</h1>
-                <div className={`p-2 md:p-3 rounded-xl border-2 font-medium text-sm sm:text-lg md:text-xl transition-colors
+              <header className="flex-none mb-2 text-center w-full max-w-5xl">
+                <h1 className="text-xl sm:text-2xl md:text-4xl font-bold text-slate-800 mb-1 sm:mb-2">Kolik je hodin?</h1>
+                <div className={`p-1 sm:p-2 rounded-lg sm:rounded-xl border-2 font-medium text-xs sm:text-sm md:text-xl transition-colors
                   ${message.type === 'success' ? 'bg-green-100 border-green-400 text-green-800' : 
                     message.type === 'error' ? 'bg-red-100 border-red-400 text-red-800' : 
                     'bg-white border-slate-300 text-slate-700'}`}>
@@ -276,19 +281,19 @@
                 </div>
               </header>
 
-              <main className="flex flex-row gap-3 sm:gap-6 md:gap-8 w-full max-w-5xl justify-center items-start">
+              <main className="flex-1 min-h-0 flex flex-row gap-2 sm:gap-6 w-full max-w-5xl justify-center items-stretch pb-1">
                 
                 {/* LEVÁ STRANA */}
-                <section className="flex flex-col items-center bg-white p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl shadow-lg border-2 md:border-4 border-slate-200 w-1/2">
-                  <div className="bg-slate-800 text-white font-mono text-3xl sm:text-5xl md:text-7xl p-2 px-4 sm:p-3 sm:px-6 md:p-4 md:px-8 rounded-xl md:rounded-2xl mb-4 md:mb-8 shadow-inner border-2 md:border-4 border-slate-900 tracking-wider">
+                <section className="flex-1 min-h-0 flex flex-col items-center justify-between bg-white p-2 sm:p-4 rounded-xl sm:rounded-3xl shadow-lg border-2 sm:border-4 border-slate-200">
+                  <div className="flex-none bg-slate-800 text-white font-mono text-3xl sm:text-5xl md:text-7xl p-1 px-3 sm:p-2 sm:px-6 md:p-4 md:px-8 rounded-lg sm:rounded-2xl shadow-inner border-2 sm:border-4 border-slate-900 tracking-wider">
                     {formatTime(targetTime.h, targetTime.m)}
                   </div>
 
-                  <div className="relative w-full max-w-[300px] aspect-square mb-2 md:mb-4 flex justify-center items-center">
+                  <div className="flex-1 min-h-0 w-full flex justify-center items-center py-1">
                     <svg 
                       ref={svgRef}
                       viewBox="0 0 300 300"
-                      className="cursor-pointer w-full h-full"
+                      className="cursor-pointer aspect-square h-full max-w-full"
                       onPointerDown={handlePointerDown}
                       onPointerMove={handlePointerMove}
                       onTouchStart={handlePointerDown}
@@ -338,56 +343,60 @@
                       <circle cx="150" cy="150" r="4" fill="#ef4444" />
                     </svg>
                   </div>
-                  <p className="text-center text-slate-500 mt-0 mb-3 text-xs md:text-sm font-medium">Táhni prstem za ručičky</p>
-
-                  <button 
-                    onClick={checkTime}
-                    disabled={isLevelComplete}
-                    className="w-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-bold py-3 md:py-4 px-2 md:px-8 rounded-xl text-sm sm:text-lg md:text-xl flex items-center justify-center gap-1 sm:gap-2 shadow-lg transition-transform active:scale-95 disabled:opacity-50"
-                  >
-                    <CheckIcon />
-                    <span className="hidden sm:inline">Zkontrolovat</span>
-                    <span className="sm:hidden">OK</span>
-                  </button>
+                  
+                  <div className="flex-none w-full flex flex-col items-center">
+                    <p className="text-center text-slate-500 mt-0 mb-1 sm:mb-3 text-[10px] sm:text-xs md:text-sm font-medium">Táhni prstem za ručičky</p>
+                    <button 
+                      onClick={checkTime}
+                      disabled={isLevelComplete}
+                      className="w-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-bold py-2 sm:py-3 md:py-4 px-2 md:px-8 rounded-lg sm:rounded-xl text-sm sm:text-lg md:text-xl flex items-center justify-center gap-1 sm:gap-2 shadow-lg transition-transform active:scale-95 disabled:opacity-50"
+                    >
+                      <CheckIcon />
+                      <span className="hidden sm:inline">Zkontrolovat</span>
+                      <span className="sm:hidden">OK</span>
+                    </button>
+                  </div>
                 </section>
 
                 {/* PRAVÁ STRANA */}
-                <section className="flex flex-col items-center w-1/2">
-                  <div className="relative w-full aspect-square max-w-[400px] rounded-xl md:rounded-2xl overflow-hidden shadow-xl md:shadow-2xl border-4 md:border-8 border-slate-700 bg-black">
-                    <div className="absolute inset-0">
-                      <CurrentReward />
-                    </div>
-
-                    <div className="absolute inset-0 grid grid-cols-4 grid-rows-4">
-                      {blocksRevealed.map((isRevealed, index) => (
-                        <div 
-                          key={index} 
-                          className={`transition-opacity duration-500 ease-out ${isRevealed ? 'opacity-0' : 'opacity-100'}`}
-                          style={{
-                            backgroundColor: '#7A5C46',
-                            borderTop: '16px solid #5C8727',
-                            boxShadow: 'inset -4px -4px 0px rgba(0,0,0,0.15), inset 4px 0px 0px rgba(255,255,255,0.05)'
-                          }}
-                        />
-                      ))}
-                    </div>
-
-                    {isLevelComplete && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-500">
-                        <TrophyIcon />
-                        <h2 className="text-white text-xl sm:text-2xl md:text-3xl font-bold mb-4 md:mb-6 text-center px-2">Skvělá práce!</h2>
-                        <button 
-                          onClick={nextLevel}
-                          className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 md:py-3 md:px-6 rounded-xl text-sm sm:text-lg md:text-xl flex items-center gap-2 shadow-lg"
-                        >
-                          <PlayIcon />
-                          <span className="hidden sm:inline">Další obrázek</span>
-                          <span className="sm:hidden">Další</span>
-                        </button>
+                <section className="flex-1 min-h-0 flex flex-col items-center justify-center">
+                  <div className="flex-1 min-h-0 w-full flex justify-center items-center">
+                    <div className="relative aspect-square h-full max-w-full rounded-lg sm:rounded-xl md:rounded-2xl overflow-hidden shadow-lg sm:shadow-xl md:shadow-2xl border-4 md:border-8 border-slate-700 bg-black">
+                      <div className="absolute inset-0">
+                        <CurrentReward />
                       </div>
-                    )}
+
+                      <div className="absolute inset-0 grid grid-cols-4 grid-rows-4">
+                        {blocksRevealed.map((isRevealed, index) => (
+                          <div 
+                            key={index} 
+                            className={`transition-opacity duration-500 ease-out ${isRevealed ? 'opacity-0' : 'opacity-100'}`}
+                            style={{
+                              backgroundColor: '#7A5C46',
+                              borderTop: 'clamp(4px, 2vh, 16px) solid #5C8727',
+                              boxShadow: 'inset -2px -2px 0px rgba(0,0,0,0.15), inset 2px 0px 0px rgba(255,255,255,0.05)'
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      {isLevelComplete && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-500">
+                          <TrophyIcon />
+                          <h2 className="text-white text-lg sm:text-xl md:text-3xl font-bold mb-2 md:mb-6 text-center px-2">Skvělá práce!</h2>
+                          <button 
+                            onClick={nextLevel}
+                            className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-3 md:py-3 md:px-6 rounded-lg sm:rounded-xl text-xs sm:text-lg md:text-xl flex items-center gap-1 sm:gap-2 shadow-lg"
+                          >
+                            <PlayIcon />
+                            <span className="hidden sm:inline">Další obrázek</span>
+                            <span className="sm:hidden">Další</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="mt-2 md:mt-4 text-xs sm:text-sm md:text-base text-slate-500 font-medium">
+                  <div className="flex-none mt-1 sm:mt-2 md:mt-4 text-[10px] sm:text-xs md:text-base text-slate-500 font-medium">
                     Odhaleno: {blocksRevealed.filter(Boolean).length} / 16
                   </div>
                 </section>
