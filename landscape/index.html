@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fotografický Dashboard</title>
+    <!-- Chosen Palette: Warm Neutrals (Stone, Amber pro focení v přírodě) -->
+    <!-- Application Structure Plan: Dashboard design optimalizovaný pro jedinou obrazovku (bez scrollování body). Header s fixní pozicí, sekce pro filtry (Objektivy, Lokality), graf s analýzou měsíců a hlavní dynamická tabulka scrollovatelná uvnitř flex-kontejneru. Navrženo pro rychlou orientaci v terénu na mobilu i PC. -->
+    <!-- Visualization & Content Choices: 
+         - Bar Chart (Chart.js): Slouží k vizualizaci vytíženosti fotografa v průběhu roku. 
+         - Dynamická tabulka: Řeší hlavní uživatelský požadavek na přehlednost a sloučení všech informací do tabulkové formy.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used pro vizualizace. NO Mermaid JS used. -->
+    
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            height: 100dvh;
+            width: 100vw;
+            overflow: hidden;
+            background-color: #fafaf9; /* stone-50 */
+            overscroll-behavior-y: contain;
+        }
+        .scrollable-content {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+        /* Chart container constraint */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 200px;
+        }
+        @media (min-width: 640px) {
+            .chart-container {
+                height: 250px;
+            }
+        }
+    </style>
+</head>
+<body class="text-stone-800">
+    <div id="root" class="h-full w-full flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const photoData = [
+            { id: 1, months: [3, 4], seasonLabel: 'Březen – Duben', subject: 'Meruňky, Mandloně', location: 'Hustopeče, Velké Pavlovice', region: 'Jižní Morava (Obecně)', lenses: ['24-70mm', '50-400mm'], description: '24-70: Sady s rozhlednou. 50-400: Solitéry proti vzdáleným kopcům Pálavy. Komprese ohniska přilepí strom k horizontu.' },
+            { id: 2, months: [4], seasonLabel: 'Duben', subject: 'Trnky, Třešně', location: 'Remízky, Žebětín', region: 'Brno a okolí', lenses: ['50-400mm'], description: 'Bílé linie keřů tvoří skvělé "vodící linky" (leading lines) vedoucí oko diváka na ohnisku 150-200mm.' },
+            { id: 3, months: [4, 5], seasonLabel: 'Konec dubna – Květen', subject: 'Řepka olejka', location: 'Karlín, Šardice', region: 'Moravské Toskánsko', lenses: ['50-400mm'], description: 'Ideál pro Toskánsko. Zazoomuj na horizont na 300-400mm. Vytvoříš abstraktní žlutozelené vrstvy a "zploštíš" terén. Pozor na CPL.' },
+            { id: 4, months: [5], seasonLabel: 'Květen', subject: 'Jetel inkarnát (růžák)', location: 'Pole na jihu', region: 'Jižní Morava (Obecně)', lenses: ['14-30mm', '24-70mm', '50-400mm'], description: '14-30 nízko u země pro deformaci prostoru. 50-400mm odstup pro portréty s jednolitou červenou zdí v pozadí.' },
+            { id: 5, months: [5, 6], seasonLabel: 'Květen – Červen', subject: 'Stepní květena', location: 'Děvín, Svatý kopeček', region: 'Pálava', lenses: ['14-30mm', '24-70mm'], description: 'Foť nízkou flóru s dominantou vápencových skal. F/8 až f/11 pro proostření popředí i skal v dálce.' },
+            { id: 6, months: [5, 6], seasonLabel: 'Zlom Květen/Červen', subject: 'Vlčí mák', location: 'Okraje polí, úhory', region: 'Jižní Morava (Obecně)', lenses: ['24-70mm', '50-400mm'], description: 'Zlatá hodinka a protisvětlo. 24-70 na f/2.8 izoluje květ. 50-400mm slije celé makové pole do jedné rudé stěny.' },
+            { id: 7, months: [6, 7], seasonLabel: 'Červen – Červenec', subject: 'Slunečnice, Svazenka', location: 'Různě', region: 'Jižní Morava (Obecně)', lenses: ['50-400mm'], description: 'Na 400 mm naskládáš hlavy slunečnic těsně za sebe (iluze pole bez mezer a stonků). Svazenka je top s ranní mlhou.' },
+            { id: 8, months: [7, 8], seasonLabel: 'Červenec – Srpen', subject: 'Zrající obilí', location: 'Zemědělské oblasti', region: 'Moravské Toskánsko', lenses: ['14-30mm', '50-400mm'], description: '14-30mm kamera v klasech namířená do dramatických mraků. 50-400mm zlaté abstraktní křivky a detaily klasů.' },
+            { id: 9, months: [4, 5], seasonLabel: 'Jaro (Konec dubna - Květen)', subject: 'Zelené vlny a orba', location: 'Kyjovsko', region: 'Moravské Toskánsko', lenses: ['50-400mm'], description: 'Absolutní vrchol sezóny. Foť brzy ráno nebo večer. Nízké slunce vytváří hluboké stíny, které modelují kopce do 3D.' },
+            { id: 10, months: [7, 8], seasonLabel: 'Léto (Červenec - Srpen)', subject: 'Textura žní a prach', location: 'Kyjovsko', region: 'Moravské Toskánsko', lenses: ['24-70mm', '50-400mm'], description: 'Krajina ztratí syté barvy, tvoří ale textury a balíky slámy. Při západu chytej prach z kombajnů v protisvětle.' },
+            { id: 11, months: [10, 11], seasonLabel: 'Podzim (Říjen - Listopad)', subject: 'Zoraná půda a inverze', location: 'Kyjovsko', region: 'Moravské Toskánsko', lenses: ['50-400mm'], description: 'Minimalismus a zemitost. Teleobjektivem izoluj solitérní stromy nebo kapličky vystupující z ranní inverze/oparů.' },
+            { id: 12, months: [1, 2], seasonLabel: 'Zima (Leden - Únor)', subject: 'Sníh a grafika', location: 'Kyjovsko', region: 'Moravské Toskánsko', lenses: ['50-400mm'], description: 'Grafická abstrakce. Podmínkou je sníh. Hledej křivolaké silnice a černé stromy, fotka působí jako perokresba tužkou.' },
+            { id: 13, months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], seasonLabel: 'Celoročně', subject: 'Hrad Veveří, Přehrada', location: 'Brno a okolí', region: 'Brno a okolí', lenses: ['14-30mm', '24-70mm', '50-400mm'], description: '14-30 odrazy na hladině z mola. 24-70 lesní portréty u vody na f/2.8. 50-400 ultimátní pro "vystřihnutí" Veveří z lesů z druhého břehu.' },
+            { id: 14, months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], seasonLabel: 'Celoročně', subject: 'Děvičky, Nové Mlýny', location: 'Pavlov, D. Věstonice', region: 'Pálava', lenses: ['14-30mm', '24-70mm', '50-400mm'], description: '14-30 skály pod nohama a přehrada v dálce. 24-70 detaily vinohradů. 50-400 optické zvětšení zříceniny do scény obce zespodu.' },
+            { id: 15, months: [9, 10], seasonLabel: 'Podzim (Září – Říjen)', subject: 'Zbarvené vinice', location: 'Pálava, Velké Bílovice', region: 'Pálava', lenses: ['24-70mm', '50-400mm'], description: 'Podzimní barvy révy. 24-70: Zlatavé řádky vinohradů s Děvičkami v pozadí. 50-400: Detaily hroznů nebo silná komprese dlouhých řádků.' },
+            { id: 16, months: [10, 11], seasonLabel: 'Podzim (Říjen – Listopad)', subject: 'Barevné lesy a ranní mlhy', location: 'Okolí přehrady, Veveří', region: 'Brno a okolí', lenses: ['24-70mm', '50-400mm'], description: 'Listnaté lesy se barví dožluta a červena. Ráno se tvoří mlhy. 50-400: Vystřihnutí barevných stromů vystupujících z mlhy.' }
+        ];
+
+        const ChartComponent = ({ data }) => {
+            const chartRef = useRef(null);
+            const chartInstance = useRef(null);
+
+            useEffect(() => {
+                if (chartInstance.current) {
+                    chartInstance.current.destroy();
+                }
+                const ctx = chartRef.current.getContext('2d');
+
+                const monthCounts = new Array(12).fill(0);
+                data.forEach(item => {
+                    item.months.forEach(m => {
+                        monthCounts[m - 1]++;
+                    });
+                });
+
+                chartInstance.current = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Led', 'Úno', 'Bře', 'Dub', 'Kvě', 'Čer', 'Čvc', 'Srp', 'Zář', 'Říj', 'Lis', 'Pro'],
+                        datasets: [{
+                            label: 'Počet foto-příležitostí',
+                            data: monthCounts,
+                            backgroundColor: 'rgba(217, 119, 6, 0.85)', // Amber-600
+                            hoverBackgroundColor: 'rgba(217, 119, 6, 1)',
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: (ctx) => `Měsíc: ${ctx[0].label}`,
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { 
+                                beginAtZero: true, 
+                                ticks: { stepSize: 1, precision: 0 },
+                                grid: { color: '#f5f5f4' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+
+                return () => {
+                    if (chartInstance.current) {
+                        chartInstance.current.destroy();
+                    }
+                }
+            }, [data]);
+
+            return (
+                <div className="chart-container">
+                    <canvas ref={chartRef}></canvas>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [filterLens, setFilterLens] = useState('Vše');
+            const [filterRegion, setFilterRegion] = useState('Vše');
+
+            const regions = ['Vše', 'Moravské Toskánsko', 'Pálava', 'Brno a okolí', 'Jižní Morava (Obecně)'];
+            const lenses = ['Vše', '14-30mm', '24-70mm', '50-400mm'];
+
+            const filteredData = photoData.filter(item => {
+                const matchLens = filterLens === 'Vše' || item.lenses.includes(filterLens);
+                const matchRegion = filterRegion === 'Vše' || item.region === filterRegion;
+                return matchLens && matchRegion;
+            });
+
+            return (
+                <div className="flex flex-col h-full w-full">
+                    {/* Header */}
+                    <header className="bg-white border-b border-stone-200 px-4 py-4 flex-shrink-0 z-10 shadow-sm">
+                        <div className="max-w-7xl mx-auto flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                                <h1 className="text-xl font-bold text-stone-900">Foto Kalendář & Lokality</h1>
+                            </div>
+                            <div className="text-xs text-stone-500 hidden sm:block">Nikon Z6 II Setup</div>
+                        </div>
+                    </header>
+
+                    {/* Scrollable Main Area */}
+                    <main className="scrollable-content p-4 sm:p-6 lg:p-8">
+                        <div className="max-w-7xl mx-auto space-y-6">
+                            
+                            {/* Úvodní text (dle zadání) */}
+                            <div className="text-sm text-stone-600 mb-6">
+                                <p>Tento dashboard sjednocuje informace o obdobích, fauně, floře a lokalitách Jižní Moravy. Vyber si svůj objektiv nebo cílovou oblast a podívej se, jaké kompozice a příležitosti ti krajina aktuálně nabízí. Slouží k rychlé analýze přímo v terénu.</p>
+                            </div>
+
+                            {/* Filtry */}
+                            <section className="bg-white p-5 rounded-xl shadow-sm border border-stone-200">
+                                <h2 className="text-xs font-bold text-stone-400 tracking-wider uppercase mb-4">Interaktivní Filtry</h2>
+                                <div className="flex flex-col md:flex-row gap-6">
+                                    <div className="flex-1">
+                                        <label className="block text-sm font-semibold text-stone-700 mb-2">🔭 Zvolený objektiv</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {lenses.map(l => (
+                                                <button key={l} onClick={() => setFilterLens(l)} className={`px-4 py-2 text-sm rounded-lg transition-all font-medium border ${filterLens === l ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100 hover:border-stone-300'}`}>
+                                                    {l}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-sm font-semibold text-stone-700 mb-2">📍 Oblast focení</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {regions.map(r => (
+                                                <button key={r} onClick={() => setFilterRegion(r)} className={`px-4 py-2 text-sm rounded-lg transition-all font-medium border ${filterRegion === r ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100 hover:border-stone-300'}`}>
+                                                    {r}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <div className="flex flex-col lg:flex-row gap-6">
+                                {/* Graf sezónnosti */}
+                                <section className="w-full lg:w-1/3 bg-white p-5 rounded-xl shadow-sm border border-stone-200 flex flex-col">
+                                    <h2 className="text-xs font-bold text-stone-400 tracking-wider uppercase mb-1">Analýza sezóny</h2>
+                                    <p className="text-xs text-stone-500 mb-4">Počet fotogenických událostí dle filtru v čase.</p>
+                                    <div className="flex-1 flex items-center justify-center min-h-[200px]">
+                                        {filteredData.length > 0 ? (
+                                            <ChartComponent data={filteredData} />
+                                        ) : (
+                                            <div className="text-stone-400 text-sm">Žádná data pro tento výběr.</div>
+                                        )}
+                                    </div>
+                                </section>
+
+                                {/* Interaktivní Tabulka */}
+                                <section className="w-full lg:w-2/3 bg-white rounded-xl shadow-sm border border-stone-200 flex flex-col overflow-hidden">
+                                    <div className="p-5 border-b border-stone-100">
+                                        <h2 className="text-xs font-bold text-stone-400 tracking-wider uppercase mb-1">Detailní přehled a tipy (Tabulka)</h2>
+                                        <p className="text-xs text-stone-500">Zobrazeno {filteredData.length} výsledků. Sloučení fauny, flóry i čisté krajiny (např. Toskánsko).</p>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="text-xs text-stone-500 uppercase bg-stone-50/50">
+                                                <tr>
+                                                    <th className="px-5 py-4 font-semibold border-b border-stone-200">Období</th>
+                                                    <th className="px-5 py-4 font-semibold border-b border-stone-200">Lokalita & Subjekt</th>
+                                                    <th className="px-5 py-4 font-semibold border-b border-stone-200">Objektiv</th>
+                                                    <th className="px-5 py-4 font-semibold border-b border-stone-200">Kompozice & Tipy</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-100">
+                                                {filteredData.length === 0 && (
+                                                    <tr><td colSpan="4" className="p-8 text-center text-stone-500">Žádné výsledky neodpovídají zvoleným filtrům.</td></tr>
+                                                )}
+                                                {filteredData.map(item => (
+                                                    <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
+                                                        <td className="px-5 py-4 whitespace-nowrap text-stone-900 font-medium">
+                                                            {item.seasonLabel}
+                                                        </td>
+                                                        <td className="px-5 py-4">
+                                                            <div className="font-bold text-amber-700">{item.subject}</div>
+                                                            <div className="text-xs text-stone-500 mt-0.5">📍 {item.region} ({item.location})</div>
+                                                        </td>
+                                                        <td className="px-5 py-4">
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {item.lenses.map(l => (
+                                                                    <span key={l} className="px-2 py-1 bg-stone-100 text-stone-700 rounded text-xs font-medium border border-stone-200">{l}</span>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-5 py-4 text-stone-600 leading-relaxed min-w-[280px]">
+                                                            {item.description}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
