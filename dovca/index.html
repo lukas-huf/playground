@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Plánovač Dovolené</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            overscroll-behavior-y: contain; 
+            user-select: none; 
+            touch-action: none;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+        }
+        /* Custom scrollbar pro timeline */
+        .timeline-container::-webkit-scrollbar { height: 8px; }
+        .timeline-container::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 4px; }
+        .timeline-container::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 4px; }
+    </style>
+</head>
+<body class="h-[100dvh] w-[100vw] overflow-hidden flex flex-col font-sans">
+    <div id="root" class="flex-1 flex flex-col h-full w-full min-h-0"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+
+        const parseDate = (dStr) => new Date(dStr);
+        const formatDate = (d) => d.toISOString().split('T')[0];
+        
+        const getDaysArray = (start, end) => {
+            const arr = [];
+            let dt = new Date(start);
+            const endDt = new Date(end);
+            while (dt <= endDt) {
+                arr.push(new Date(dt));
+                dt.setDate(dt.getDate() + 1);
+            }
+            return arr;
+        };
+
+        const defaultStays = [
+            { id: '1', name: 'Bled', color: '#3b82f6', startIdx: 0, endIdx: 3 },
+            { id: '2', name: 'Bohinj', color: '#10b981', startIdx: 3, endIdx: 7 }
+        ];
+
+        function App() {
+            const [startDate, setStartDate] = useState('2026-06-28');
+            const [endDate, setEndDate] = useState('2026-07-11');
+            const [stays, setStays] = useState(defaultStays);
+            const [events, setEvents] = useState([
+                { id: '3', name: 'Zastávka Ljubljana', color: '#f59e0b', dayIdx: 3 }
+            ]);
+            const [editingItem, setEditingItem] = useState(null);
+
+            const timelineRef = useRef(null);
+            const draggedRef = useRef(false);
+            const [dragState, setDragState] = useState(null);
+
+            const days = useMemo(() => getDaysArray(startDate, endDate), [startDate, endDate]);
+            const totalDays = days.length;
+
+            // --- DRAG & DROP LOGIC ---
+            const handlePointerDown = (e, item, type, action) => {
+                e.stopPropagation();
+                e.target.setPointerCapture(e.pointerId);
+                draggedRef.current = false;
+                
+                const containerRect = timelineRef.current.getBoundingClientRect();
+                const cellWidth = containerRect.width / totalDays;
+
+                let linkedStayId = null;
+                if (type === 'stay') {
+                    if (action === 'resize-start') {
+                        const linked = stays.find(s => s.id !== item.id && s.endIdx === item.startIdx);
+                        if (linked) linkedStayId = linked.id;
+                    } else if (action === 'resize-end') {
+                        const linked = stays.find(s => s.id !== item.id && s.startIdx === item.endIdx);
+                        if (linked) linkedStayId = linked.id;
+                    }
+                }
+
+                setDragState({
+                    id: item.id,
+                    type,
+                    action, // 'move', 'resize-start', 'resize-end'
+                    startX: e.clientX,
+                    origStart: type === 'stay' ? item.startIdx : item.dayIdx,
+                    origEnd: type === 'stay' ? item.endIdx : item.dayIdx,
+                    cellWidth,
+                    linkedStayId
+                });
+            };
+
+            const handlePointerMove = (e) => {
+                if (!dragState) return;
+
+                const deltaX = e.clientX - dragState.startX;
+                
+                // Detekce reálného tažení (proti nechtěnému kliknutí s třesem ruky)
+                if (Math.abs(deltaX) > 3) {
+                    draggedRef.current = true;
+                }
+
+                const deltaCells = Math.round(deltaX / dragState.cellWidth);
+
+                if (dragState.type === 'stay') {
+                    setStays(prev => {
+                        const mainStay = prev.find(s => s.id === dragState.id);
+                        if (!mainStay) return prev;
+
+                        let newStart = dragState.origStart;
+                        let newEnd = dragState.origEnd;
+
+                        if (dragState.action === 'move') {
+                            newStart += deltaCells;
+                            newEnd += deltaCells;
+                            const duration = dragState.origEnd - dragState.origStart;
+
+                            if (newStart < 0) { newStart = 0; newEnd = duration; }
+                            if (newEnd >= totalDays) { newEnd = totalDays - 1; newStart = newEnd - duration; }
+
+                            const earlierStays = prev.filter(s => s.id !== dragState.id && s.startIdx < dragState.origStart);
+                            const minAllowedStart = earlierStays.length > 0 ? Math.max(...earlierStays.map(s => s.endIdx)) : 0;
+                            
+                            const laterStays = prev.filter(s => s.id !== dragState.id && s.startIdx > dragState.origStart);
+                            const maxAllowedEnd = laterStays.length > 0 ? Math.min(...laterStays.map(s => s.startIdx)) : totalDays - 1;
+
+                            if (newStart < minAllowedStart) {
+                                newStart = minAllowedStart;
+                                newEnd = newStart + duration;
+                            }
+                            if (newEnd > maxAllowedEnd) {
+                                newEnd = maxAllowedEnd;
+                                newStart = newEnd - duration;
+                            }
+                        } else if (dragState.action === 'resize-start') {
+                            newStart += deltaCells;
+                            if (newStart > newEnd) newStart = newEnd;
+                            if (newStart < 0) newStart = 0;
+
+                            if (dragState.linkedStayId) {
+                                const linked = prev.find(s => s.id === dragState.linkedStayId);
+                                if (linked && newStart < linked.startIdx) newStart = linked.startIdx;
+                            } else {
+                                const prevStays = prev.filter(s => s.id !== dragState.id && s.endIdx <= dragState.origStart);
+                                if (prevStays.length > 0) {
+                                    const maxEnd = Math.max(...prevStays.map(s => s.endIdx));
+                                    if (newStart < maxEnd) newStart = maxEnd;
+                                }
+                            }
+                        } else if (dragState.action === 'resize-end') {
+                            newEnd += deltaCells;
+                            if (newEnd < newStart) newEnd = newStart;
+                            if (newEnd >= totalDays) newEnd = totalDays - 1;
+
+                            if (dragState.linkedStayId) {
+                                const linked = prev.find(s => s.id === dragState.linkedStayId);
+                                if (linked && newEnd > linked.endIdx) newEnd = linked.endIdx;
+                            } else {
+                                const nextStays = prev.filter(s => s.id !== dragState.id && s.startIdx >= dragState.origEnd);
+                                if (nextStays.length > 0) {
+                                    const minStart = Math.min(...nextStays.map(s => s.startIdx));
+                                    if (newEnd > minStart) newEnd = minStart;
+                                }
+                            }
+                        }
+
+                        return prev.map(s => {
+                            if (s.id === dragState.id) return { ...s, startIdx: newStart, endIdx: newEnd };
+                            if (s.id === dragState.linkedStayId) {
+                                if (dragState.action === 'resize-start') return { ...s, endIdx: newStart };
+                                if (dragState.action === 'resize-end') return { ...s, startIdx: newEnd };
+                            }
+                            return s;
+                        });
+                    });
+                } else if (dragState.type === 'event') {
+                    setEvents(prev => prev.map(evt => {
+                        if (evt.id !== dragState.id) return evt;
+                        let newIdx = dragState.origStart + deltaCells;
+                        if (newIdx < 0) newIdx = 0;
+                        if (newIdx >= totalDays) newIdx = totalDays - 1;
+                        return { ...evt, dayIdx: newIdx };
+                    }));
+                }
+            };
+
+            const handlePointerUp = (e) => {
+                if (dragState) {
+                    e.target.releasePointerCapture(e.pointerId);
+                    setDragState(null);
+                }
+            };
+
+            // --- SAVE / LOAD ---
+            const handleExport = () => {
+                const data = JSON.stringify({ startDate, endDate, stays, events }, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'dovolena.json';
+                a.click();
+            };
+
+            const handleImport = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        if (data.startDate) setStartDate(data.startDate);
+                        if (data.endDate) setEndDate(data.endDate);
+                        if (data.stays) setStays(data.stays);
+                        if (data.events) setEvents(data.events);
+                    } catch (err) {
+                        alert("Chyba při čtení souboru.");
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            // --- RENDER HELPERS ---
+            const getDayLabel = (date) => {
+                const daysOfWeek = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
+                return `${daysOfWeek[date.getDay()]} ${date.getDate()}.${date.getMonth() + 1}.`;
+            };
+
+            const addNewStay = () => {
+                setStays([...stays, { id: generateId(), name: 'Nové místo', color: '#6366f1', startIdx: 0, endIdx: 1 }]);
+            };
+
+            const addNewEvent = () => {
+                setEvents([...events, { id: generateId(), name: 'Nový výlet', color: '#ec4899', dayIdx: 0 }]);
+            };
+
+            // --- VIZUÁLNÍ LOGIKA PŘEJEZDŮ (SPLIT DAYS) ---
+            const renderedStays = useMemo(() => {
+                let sorted = [...stays].sort((a, b) => a.startIdx - b.startIdx);
+                
+                return stays.map(stay => {
+                    let visStart = stay.startIdx;
+                    let visEnd = stay.endIdx + 1; // +1 protoze chceme vyplnit celou bunku
+
+                    // Zjistime, zda na pocatku neni predchozi pobyt konci v ten samy den
+                    const overlapLeft = stays.some(s => s.id !== stay.id && s.endIdx === stay.startIdx);
+                    if (overlapLeft) visStart += 0.5;
+
+                    // Zjistime, zda na konci nezacina dalsi pobyt
+                    const overlapRight = stays.some(s => s.id !== stay.id && s.startIdx === stay.endIdx);
+                    if (overlapRight) visEnd -= 0.5;
+
+                    return { ...stay, visStart, visEnd };
+                });
+            }, [stays]);
+
+            // Vypočítáme potřebnou výšku kontejneru pro výlety podle maximálního počtu překryvů
+            const maxEventsInOneDay = useMemo(() => {
+                const counts = {};
+                events.forEach(e => { counts[e.dayIdx] = (counts[e.dayIdx] || 0) + 1; });
+                return Math.max(0, ...Object.values(counts));
+            }, [events]);
+            const eventsContainerMinHeight = Math.max(80, maxEventsInOneDay * 38 + 16);
+
+            // --- KLIKNUTÍ DO PRÁZDNÉHO PROSTORU PRO NOVÝ POBYT ---
+            const handleStayContainerClick = (e) => {
+                const containerRect = timelineRef.current.getBoundingClientRect();
+                const clickX = e.clientX - containerRect.left;
+                const cellWidth = containerRect.width / totalDays;
+                const dayIdx = Math.max(0, Math.min(totalDays - 1, Math.floor(clickX / cellWidth)));
+
+                // Pokud klikneme doprostřed existujícího pobytu (není to hranice), neděláme nic
+                const isInside = stays.some(s => s.startIdx < dayIdx && s.endIdx > dayIdx);
+                if (isInside) return;
+
+                // Pokud na tomto dnu už nějaký pobyt ZAČÍNÁ (např. při přejezdu), 
+                // posuneme ho a všechny následující o 1 den doprava, abychom udělali místo.
+                const needsShift = stays.some(s => s.startIdx === dayIdx);
+
+                setStays(prev => {
+                    let updatedStays = prev;
+                    if (needsShift) {
+                        updatedStays = prev.map(s => {
+                            if (s.startIdx >= dayIdx) {
+                                return { ...s, startIdx: s.startIdx + 1, endIdx: s.endIdx + 1 };
+                            }
+                            return s;
+                        });
+                    }
+
+                    return [...updatedStays, { 
+                        id: generateId(), 
+                        name: 'Nové místo', 
+                        color: '#6366f1', 
+                        startIdx: dayIdx, 
+                        endIdx: dayIdx + 1 
+                    }];
+                });
+            };
+
+            // --- KLIKNUTÍ PRO NOVÝ VÝLET ---
+            const handleEventContainerClick = (e) => {
+                const containerRect = timelineRef.current.getBoundingClientRect();
+                const clickX = e.clientX - containerRect.left;
+                const cellWidth = containerRect.width / totalDays;
+                const dayIdx = Math.max(0, Math.min(totalDays - 1, Math.floor(clickX / cellWidth)));
+
+                setEvents([...events, { id: generateId(), name: 'Nový výlet', color: '#ec4899', dayIdx }]);
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-white text-gray-800">
+                    {/* HEADER */}
+                    <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-wrap gap-4 items-center justify-between shrink-0 shadow-sm">
+                        <h1 className="text-xl font-bold text-gray-700">🏕️ Plánovač</h1>
+                        <div className="flex gap-4 items-center flex-wrap">
+                            <div className="flex gap-2 items-center">
+                                <label className="text-sm text-gray-500 font-medium">Od:</label>
+                                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border rounded px-2 py-1 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div className="flex gap-2 items-center">
+                                <label className="text-sm text-gray-500 font-medium">Do:</label>
+                                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border rounded px-2 py-1 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handleExport} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm font-medium transition">Uložit JSON</button>
+                                <label className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded text-sm cursor-pointer font-medium transition">
+                                    Načíst JSON
+                                    <input type="file" accept=".json" onChange={handleImport} className="hidden" />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* TOOLBAR */}
+                    <div className="p-3 flex gap-3 border-b border-gray-100 bg-white shrink-0">
+                        <button onClick={addNewStay} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded shadow-sm text-sm font-semibold transition">+ Přidat pobyt</button>
+                        <button onClick={addNewEvent} className="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded shadow-sm text-sm font-semibold transition">+ Přidat výlet/město</button>
+                    </div>
+
+                    {/* TIMELINE AREA */}
+                    <div className="flex-1 overflow-x-auto timeline-container relative min-h-0 bg-gray-50">
+                        <div 
+                            ref={timelineRef}
+                            className="relative min-w-[800px] h-full flex flex-col"
+                            style={{ width: `${Math.max(100, totalDays * 8)}%` }} // Zajistí, že dny nejsou moc smrsklé
+                        >
+                            {/* Dny v záhlaví */}
+                            <div className="flex w-full h-10 border-b border-gray-300 bg-white sticky top-0 z-10 shrink-0 shadow-sm">
+                                {days.map((d, i) => (
+                                    <div key={i} className="flex-1 border-r border-gray-200 flex items-center justify-center text-xs font-semibold text-gray-600">
+                                        {getDayLabel(d)}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Background Grid */}
+                            <div className="absolute top-10 bottom-0 left-0 right-0 flex pointer-events-none">
+                                {days.map((_, i) => (
+                                    <div key={i} className="flex-1 border-r border-gray-200 border-dashed"></div>
+                                ))}
+                            </div>
+
+                            {/* Pobyty (Řádek 1) */}
+                            <div 
+                                className="relative w-full h-20 mt-4 shrink-0 cursor-pointer"
+                                onClick={handleStayContainerClick}
+                                title="Kliknutím sem přidáte nový pobyt"
+                            >
+                                {renderedStays.map(stay => {
+                                    const leftPct = (stay.visStart / totalDays) * 100;
+                                    const widthPct = ((stay.visEnd - stay.visStart) / totalDays) * 100;
+
+                                    return (
+                                        <div 
+                                            key={stay.id}
+                                            className="absolute h-16 top-2 rounded shadow-md group border border-black/10 select-none overflow-hidden"
+                                            style={{ 
+                                                left: `${leftPct}%`, 
+                                                width: `${widthPct}%`, 
+                                                backgroundColor: stay.color,
+                                                cursor: dragState ? 'grabbing' : 'grab'
+                                            }}
+                                            onPointerDown={(e) => handlePointerDown(e, stay, 'stay', 'move')}
+                                            onPointerMove={handlePointerMove}
+                                            onPointerUp={handlePointerUp}
+                                            onPointerCancel={handlePointerUp}
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Zabránit probublání na rodiče (nevytvoří nový pobyt)
+                                                if (!draggedRef.current) {
+                                                    setEditingItem({ type: 'stay', ...stay });
+                                                }
+                                            }}
+                                        >
+                                            <div className="w-full h-full flex items-center justify-center text-white font-bold text-xs leading-tight text-center drop-shadow-md px-2 break-words whitespace-normal pointer-events-none">
+                                                {stay.name}
+                                            </div>
+                                            
+                                            {/* Resize handles */}
+                                            <div 
+                                                className="absolute left-0 top-0 bottom-0 w-4 cursor-ew-resize hover:bg-black/20"
+                                                onPointerDown={(e) => handlePointerDown(e, stay, 'stay', 'resize-start')}
+                                            ></div>
+                                            <div 
+                                                className="absolute right-0 top-0 bottom-0 w-4 cursor-ew-resize hover:bg-black/20"
+                                                onPointerDown={(e) => handlePointerDown(e, stay, 'stay', 'resize-end')}
+                                            ></div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Události / Města (Řádek 2) */}
+                            <div 
+                                className="relative w-full flex-1 mt-2 transition-all duration-300 cursor-pointer" 
+                                style={{ minHeight: `${eventsContainerMinHeight}px` }}
+                                onClick={handleEventContainerClick}
+                                title="Kliknutím sem přidáte nový výlet"
+                            >
+                                {events.map((evt, idx) => {
+                                    const leftPct = (evt.dayIdx / totalDays) * 100;
+                                    const widthPct = (1 / totalDays) * 100;
+
+                                    // Kolik výletů v tomto dni je v poli PŘED tímto konkrétním výletem
+                                    const slotIndex = events.filter((e, i) => e.dayIdx === evt.dayIdx && i < idx).length;
+                                    const topOffset = 8 + slotIndex * 38; // 8px základní odsazení + 38px za každý další blok
+
+                                    return (
+                                        <div 
+                                            key={evt.id}
+                                            className="absolute min-h-[32px] rounded-md shadow border border-black/10 flex items-center justify-center select-none p-1 transition-all duration-200"
+                                            style={{ 
+                                                left: `calc(${leftPct}% + 4px)`, 
+                                                width: `calc(${widthPct}% - 8px)`, 
+                                                top: `${topOffset}px`,
+                                                backgroundColor: evt.color,
+                                                cursor: dragState ? 'grabbing' : 'grab',
+                                                zIndex: dragState?.id === evt.id ? 10 : 1
+                                            }}
+                                            onPointerDown={(e) => handlePointerDown(e, evt, 'event', 'move')}
+                                            onPointerMove={handlePointerMove}
+                                            onPointerUp={handlePointerUp}
+                                            onPointerCancel={handlePointerUp}
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // Zabránit probublání na rodiče (nevytvoří nový výlet při kliku na existující)
+                                                if (!draggedRef.current) {
+                                                    setEditingItem({ type: 'event', ...evt });
+                                                }
+                                            }}
+                                        >
+                                            <span className="text-white text-[11px] leading-tight text-center font-bold break-words whitespace-normal pointer-events-none">
+                                                {evt.name}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* EDIT MODAL */}
+                    {editingItem && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+                            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+                                <h2 className="text-lg font-bold mb-4">Upravit {editingItem.type === 'stay' ? 'pobyt' : 'výlet'}</h2>
+                                
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Název</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full border rounded p-2 focus:ring-2 focus:ring-blue-400 outline-none"
+                                            value={editingItem.name}
+                                            onChange={(e) => setEditingItem({...editingItem, name: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Barva</label>
+                                        <input 
+                                            type="color" 
+                                            className="w-full h-10 border rounded cursor-pointer"
+                                            value={editingItem.color}
+                                            onChange={(e) => setEditingItem({...editingItem, color: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex justify-between">
+                                    <button 
+                                        className="text-red-500 hover:text-red-700 font-medium text-sm"
+                                        onClick={() => {
+                                            if (editingItem.type === 'stay') {
+                                                setStays(stays.filter(s => s.id !== editingItem.id));
+                                            } else {
+                                                setEvents(events.filter(e => e.id !== editingItem.id));
+                                            }
+                                            setEditingItem(null);
+                                        }}
+                                    >
+                                        Smazat
+                                    </button>
+                                    <div className="flex gap-2">
+                                        <button className="px-4 py-2 bg-gray-200 rounded text-gray-700 font-medium text-sm" onClick={() => setEditingItem(null)}>Zrušit</button>
+                                        <button className="px-4 py-2 bg-blue-500 text-white rounded font-medium text-sm" onClick={() => {
+                                            if (editingItem.type === 'stay') {
+                                                setStays(stays.map(s => s.id === editingItem.id ? editingItem : s));
+                                            } else {
+                                                setEvents(events.map(e => e.id === editingItem.id ? editingItem : e));
+                                            }
+                                            setEditingItem(null);
+                                        }}>Uložit</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
