@@ -147,7 +147,12 @@
 
                             if (dragState.linkedStayId) {
                                 const linked = prev.find(s => s.id === dragState.linkedStayId);
-                                if (linked && newStart < linked.startIdx) newStart = linked.startIdx;
+                                if (linked) {
+                                    // PUSH LOGIC: Pokud tlačíme DO souseda (doleva), posuneme i jeho konec
+                                    if (newStart < dragState.origStart) {
+                                        if (newStart < linked.startIdx) newStart = linked.startIdx;
+                                    }
+                                }
                             } else {
                                 const prevStays = prev.filter(s => s.id !== dragState.id && s.endIdx <= dragState.origStart);
                                 if (prevStays.length > 0) {
@@ -162,7 +167,12 @@
 
                             if (dragState.linkedStayId) {
                                 const linked = prev.find(s => s.id === dragState.linkedStayId);
-                                if (linked && newEnd > linked.endIdx) newEnd = linked.endIdx;
+                                if (linked) {
+                                    // PUSH LOGIC: Pokud tlačíme DO souseda (doprava), posuneme i jeho začátek
+                                    if (newEnd > dragState.origEnd) {
+                                        if (newEnd > linked.endIdx) newEnd = linked.endIdx;
+                                    }
+                                }
                             } else {
                                 const nextStays = prev.filter(s => s.id !== dragState.id && s.startIdx >= dragState.origEnd);
                                 if (nextStays.length > 0) {
@@ -174,9 +184,15 @@
 
                         return prev.map(s => {
                             if (s.id === dragState.id) return { ...s, startIdx: newStart, endIdx: newEnd };
+                            
+                            // Aplikace tlaku na propojený sousední pobyt pouze pokud tlačíme do něj
                             if (s.id === dragState.linkedStayId) {
-                                if (dragState.action === 'resize-start') return { ...s, endIdx: newStart };
-                                if (dragState.action === 'resize-end') return { ...s, startIdx: newEnd };
+                                if (dragState.action === 'resize-start' && newStart < dragState.origStart) {
+                                    return { ...s, endIdx: newStart };
+                                }
+                                if (dragState.action === 'resize-end' && newEnd > dragState.origEnd) {
+                                    return { ...s, startIdx: newEnd };
+                                }
                             }
                             return s;
                         });
